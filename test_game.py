@@ -484,7 +484,7 @@ def test_story_intro():
 
 def test_player_emoji():
     """Player emoji should be the cowboy hat face."""
-    assert game.PLAYER_EMOJI == "\U0001F920"  # 🤠
+    assert game.PLAYER_EMOJI == "\U0001F3A9"  # 🎩
 
 
 def test_collectible_emoji():
@@ -519,3 +519,72 @@ def test_cell_content_uses_correct_emojis():
     assert game.COLLECTIBLE_EMOJI in game.get_cell_content(0, 0)
     assert game.HAZARD_EMOJI in game.get_cell_content(4, 4)
     assert game.get_cell_content(1, 3) == " . "  # empty cell unchanged
+
+
+# =============================================================================
+# HAZARD MOVEMENT TESTS
+# =============================================================================
+
+def test_move_hazards_changes_positions():
+    """move_hazards() should move all hazards to different positions."""
+    game.hazards = [(0, 0), (4, 4)]
+    old_positions = game.hazards[:]
+    # Run multiple times — at least one move should change positions
+    moved = False
+    for _ in range(20):
+        game.move_hazards()
+        if game.hazards != old_positions:
+            moved = True
+            break
+    assert moved
+
+
+def test_move_hazards_keeps_count():
+    """move_hazards() should keep the same number of hazards."""
+    game.hazards = [(0, 0), (1, 1), (2, 2)]
+    game.move_hazards()
+    assert len(game.hazards) == 3
+
+
+def test_move_hazards_avoids_player():
+    """After moving, hazards should not land on the player."""
+    game.player_row = 2
+    game.player_col = 2
+    game.hazards = [(0, 0), (4, 4)]
+    for _ in range(30):
+        game.move_hazards()
+        assert (game.player_row, game.player_col) not in game.hazards
+
+
+def test_move_hazards_avoids_collectible():
+    """After moving, hazards should not land on the collectible."""
+    game.collectible_row = 1
+    game.collectible_col = 1
+    game.hazards = [(0, 0), (4, 4)]
+    for _ in range(30):
+        game.move_hazards()
+        assert (game.collectible_row, game.collectible_col) not in game.hazards
+
+
+def test_move_hazards_within_grid():
+    """After moving, all hazards should still be within grid boundaries."""
+    game.hazards = [(0, 0), (1, 1), (2, 2), (3, 3)]
+    for _ in range(30):
+        game.move_hazards()
+        for row, col in game.hazards:
+            assert 0 <= row < game.GRID_SIZE
+            assert 0 <= col < game.GRID_SIZE
+
+
+def test_move_hazards_no_duplicates():
+    """After moving, no two hazards should share the same position."""
+    game.hazards = [(0, 0), (1, 1), (2, 2), (3, 3)]
+    for _ in range(30):
+        game.move_hazards()
+        assert len(game.hazards) == len(set(game.hazards))
+
+
+def test_hazard_move_config():
+    """Hazard move interval config should be set correctly."""
+    assert game.HAZARD_MOVE_MIN == 2
+    assert game.HAZARD_MOVE_MAX == 5

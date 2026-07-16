@@ -1,5 +1,6 @@
 import os
 import random
+import select
 import sys
 import time
 import tty
@@ -15,6 +16,8 @@ TIME_LIMIT = 60        # 60 seconds to complete the game
 STARTING_LIVES = 2     # Player begins with 2 lives
 MIN_HAZARDS = 2        # Minimum number of hazards on the grid
 MAX_HAZARDS = 4        # Maximum number of hazards on the grid
+HAZARD_MOVE_MIN = 2    # Minimum seconds between hazard moves
+HAZARD_MOVE_MAX = 5    # Maximum seconds between hazard moves
 
 # =============================================================================
 # CUSTOM THEME
@@ -22,7 +25,7 @@ MAX_HAZARDS = 4        # Maximum number of hazards on the grid
 
 GAME_NAME = "Australian Jones"
 STORY_INTRO = "Find and collect treasures and avoid traps"
-PLAYER_EMOJI = "\U0001F920"       # 🤠
+PLAYER_EMOJI = "\U0001F3A9"       # 🎩
 COLLECTIBLE_EMOJI = "\U0001F4E6"  # 📦
 HAZARD_EMOJI = "\U0001F30B"       # 🌋
 WIN_MESSAGE = "You won"
@@ -77,6 +80,33 @@ def get_keypress() -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
     return key
+
+
+def get_keypress_with_timeout(timeout: float) -> str | None:
+    """
+    Wait up to 'timeout' seconds for a keypress.
+    Returns the key if pressed, or None if the timeout expires.
+
+    This lets us do other things (like move hazards) when the player
+    hasn't pressed a key yet.
+    """
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    try:
+        tty.setraw(fd)
+        # select() waits for input OR until timeout — whichever comes first
+        # The first arg is a list of file descriptors to check for reading
+        ready, _, _ = select.select([fd], [], [], timeout)
+        if ready:
+            # A key was pressed — read it
+            key = sys.stdin.read(1)
+            return key
+        else:
+            # Timeout expired — no key was pressed
+            return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
 # =============================================================================
@@ -232,6 +262,23 @@ def spawn_hazards() -> None:
         hazards.append(pos)
 
 
+def move_hazards() -> None:
+    """
+    Move all hazards to new random positions on the grid.
+    This makes the game more dynamic — hazards shift every 2-5 seconds!
+    No two hazards will end up on the same position.
+    """
+    global hazards
+
+    num_hazards = len(hazards)
+    # Temporarily clear hazards so new positions don't avoid old ones
+    hazards = []
+
+    for _ in range(num_hazards):
+        pos = _spawn_one_hazard()
+        hazards.append(pos)
+
+
 # =============================================================================
 # COLLISION CHECKS (what happens when the player steps on something)
 # =============================================================================
@@ -337,11 +384,14 @@ def run_game() -> bool:
     print(f"Collect {COLLECTIBLE_EMOJI} to score. Avoid {HAZARD_EMOJI} traps!")
     print(f"You have {TIME_LIMIT} seconds, {STARTING_LIVES} lives,")
     print(f"and {len(hazards)} traps to dodge.")
+    print(f"Traps move every {HAZARD_MOVE_MIN}-{HAZARD_MOVE_MAX} seconds!")
     print("WASD to move. Q to quit.\n")
     print("Press any key to start...")
     get_keypress()
 
     start_time = time.time()
+    # Pick when the hazards will first move
+    next_hazard_move = time.time() + random.uniform(HAZARD_MOVE_MIN, HAZARD_MOVE_MAX)
 
     while True:
         # --- Check if time has run out ---
@@ -353,9 +403,22 @@ def run_game() -> bool:
             )
             return play_again_prompt()
 
-        # --- Draw the grid and wait for a single keypress ---
+        # --- Draw the grid ---
         draw_grid(time_remaining)
-        key = get_keypress().lower()
+
+        # --- Wait for a keypress, but only for a short time ---
+        # This lets hazards move even if the player doesn't press anything
+        time_until_hazard = max(next_hazard_move - time.time(), 0.1)
+        key = get_keypress_with_timeout(time_until_hazard)
+
+        # --- If no key was pressed, it's time to move the hazards ---
+        if key is None:
+            move_hazards()
+            # Pick the next random time for hazards to move
+            next_hazard_move = time.time() + random.uniform(HAZARD_MOVE_MIN, HAZARD_MOVE_MAX)
+            continue  # Redraw the grid with new hazard positions
+
+        key = key.lower()
 
         # --- Handle quit ---
         if key == "q":
