@@ -893,8 +893,8 @@ def test_story_intro():
 
 
 def test_player_emoji():
-    """Player emoji should be the fedora hat."""
-    assert game.PLAYER_EMOJI == "\U0001F3A9"
+    """Player emoji should be the motorcycle."""
+    assert game.PLAYER_EMOJI == "\U0001F3CD"
 
 
 def test_collectible_emoji():

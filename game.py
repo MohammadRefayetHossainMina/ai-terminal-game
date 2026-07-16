@@ -25,7 +25,7 @@ HAZARD_RESPAWN_DELAY = 2.0     # Seconds before a destroyed hazard respawns
 
 GAME_NAME = "Australian Jones"
 STORY_INTRO = "Find and collect treasures and avoid traps"
-PLAYER_EMOJI = "\U0001F3A9"       # 🎩
+PLAYER_EMOJI = "\U0001F3CD"       # 🏍️
 COLLECTIBLE_EMOJI = "\U0001F4E6"  # 📦
 HAZARD_EMOJI = "\U0001F30B"       # 🌋
 BULLET_EMOJI = "\U0001F534"       # 🔴
@@ -610,6 +610,9 @@ def setup_game() -> None:
 
 def show_welcome_screen() -> None:
     """Display the intro screen with instructions, then wait for a keypress."""
+    # Enter the alternate screen buffer — a clean canvas with no ghosting.
+    # This is what vim, htop, less etc. use to avoid leftover content.
+    sys.stdout.write("\033[?1049h")
     hide_cursor()  # Hide blinking cursor during gameplay
     # Build the entire screen as one string to avoid flicker
     frame = "\n".join([
@@ -769,7 +772,9 @@ def main() -> None:
             break
 
     show_cursor()  # Always restore cursor on exit
-    sys.stdout.write("\033[H\033[JThanks for playing! See ya, mate!\n")
+    # Exit the alternate screen buffer — restores the original terminal content
+    sys.stdout.write("\033[?1049l")
+    sys.stdout.write("Thanks for playing! See ya, mate!\n")
     sys.stdout.flush()
 
 
