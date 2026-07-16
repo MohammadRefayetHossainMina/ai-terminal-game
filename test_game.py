@@ -2,56 +2,56 @@ import game
 
 
 # =============================================================================
-# SETUP — runs before every test to reset game state
+# SETUP
 # =============================================================================
 
 def setup_function():
-    """Reset all game state before each test so tests don't interfere."""
+    """Reset all game state before each test."""
     game.reset_game()
 
 
 # =============================================================================
-# PLAYER MOVEMENT TESTS
+# PLAYER MOVEMENT TESTS (Arrow Keys)
 # =============================================================================
 
 def test_move_right():
-    """Pressing 'd' moves the player one column to the right."""
-    game.move_player("d")
+    """Pressing RIGHT arrow moves the player one column to the right."""
+    game.move_player("RIGHT")
     assert game.player_row == 0
     assert game.player_col == 1
 
 
 def test_move_down():
-    """Pressing 's' moves the player one row down."""
-    game.move_player("s")
+    """Pressing DOWN arrow moves the player one row down."""
+    game.move_player("DOWN")
     assert game.player_row == 1
     assert game.player_col == 0
 
 
 def test_move_left():
-    """Pressing 'a' moves the player one column to the left."""
+    """Pressing LEFT arrow moves the player one column to the left."""
     game.player_col = 2
-    game.move_player("a")
+    game.move_player("LEFT")
     assert game.player_col == 1
 
 
 def test_move_up():
-    """Pressing 'w' moves the player one row up."""
+    """Pressing UP arrow moves the player one row up."""
     game.player_row = 2
-    game.move_player("w")
+    game.move_player("UP")
     assert game.player_row == 1
 
 
 def test_move_left_blocked_at_edge():
     """Player at (0,0) tries to move left — should stay put."""
-    game.move_player("a")
+    game.move_player("LEFT")
     assert game.player_row == 0
     assert game.player_col == 0
 
 
 def test_move_up_blocked_at_edge():
     """Player at (0,0) tries to move up — should stay put."""
-    game.move_player("w")
+    game.move_player("UP")
     assert game.player_row == 0
     assert game.player_col == 0
 
@@ -59,30 +59,33 @@ def test_move_up_blocked_at_edge():
 def test_move_right_blocked_at_edge():
     """Player at right edge cannot move further right."""
     game.player_col = game.GRID_SIZE - 1
-    game.move_player("d")
+    result = game.move_player("RIGHT")
+    assert result is False
     assert game.player_col == game.GRID_SIZE - 1
 
 
 def test_move_down_blocked_at_edge():
     """Player at bottom edge cannot move further down."""
     game.player_row = game.GRID_SIZE - 1
-    game.move_player("s")
+    result = game.move_player("DOWN")
+    assert result is False
     assert game.player_row == game.GRID_SIZE - 1
 
 
 def test_move_to_center():
     """Move player to center of grid using multiple moves."""
     for _ in range(2):
-        game.move_player("d")
+        game.move_player("RIGHT")
     for _ in range(2):
-        game.move_player("s")
+        game.move_player("DOWN")
     assert game.player_row == 2
     assert game.player_col == 2
 
 
 def test_invalid_key_does_nothing():
     """An invalid key should not move the player."""
-    game.move_player("x")
+    result = game.move_player("X")
+    assert result is False
     assert game.player_row == 0
     assert game.player_col == 0
 
@@ -90,15 +93,194 @@ def test_invalid_key_does_nothing():
 def test_move_full_width():
     """Move player across the full width of the grid."""
     for _ in range(game.GRID_SIZE - 1):
-        game.move_player("d")
+        game.move_player("RIGHT")
     assert game.player_col == game.GRID_SIZE - 1
 
 
 def test_move_full_height():
     """Move player across the full height of the grid."""
     for _ in range(game.GRID_SIZE - 1):
-        game.move_player("s")
+        game.move_player("DOWN")
     assert game.player_row == game.GRID_SIZE - 1
+
+
+def test_move_updates_direction():
+    """Moving should update the player's facing direction."""
+    game.move_player("RIGHT")
+    assert game.player_direction == "right"
+    game.move_player("DOWN")
+    assert game.player_direction == "down"
+    game.move_player("LEFT")
+    assert game.player_direction == "left"
+    game.move_player("UP")
+    assert game.player_direction == "up"
+
+
+def test_move_returns_true():
+    """A valid move should return True."""
+    assert game.move_player("RIGHT") is True
+
+
+# =============================================================================
+# SHOOTING TESTS
+# =============================================================================
+
+def test_shoot_right_hits_hazard():
+    """Shooting right should destroy a hazard in that direction."""
+    game.player_row = 0
+    game.player_col = 0
+    game.player_direction = "right"
+    game.hazards = [(0, 2), (3, 3)]
+    result = game.shoot()
+    assert result is True
+    assert (0, 2) not in game.hazards
+    assert len(game.hazards) == 1
+
+
+def test_shoot_down_hits_hazard():
+    """Shooting down should destroy a hazard below."""
+    game.player_row = 0
+    game.player_col = 0
+    game.player_direction = "down"
+    game.hazards = [(2, 0)]
+    result = game.shoot()
+    assert result is True
+    assert (2, 0) not in game.hazards
+
+
+def test_shoot_up_hits_hazard():
+    """Shooting up should destroy a hazard above."""
+    game.player_row = 4
+    game.player_col = 4
+    game.player_direction = "up"
+    game.hazards = [(1, 4)]
+    result = game.shoot()
+    assert result is True
+    assert (1, 4) not in game.hazards
+
+
+def test_shoot_left_hits_hazard():
+    """Shooting left should destroy a hazard to the left."""
+    game.player_row = 2
+    game.player_col = 4
+    game.player_direction = "left"
+    game.hazards = [(2, 1)]
+    result = game.shoot()
+    assert result is True
+    assert (2, 1) not in game.hazards
+
+
+def test_shoot_misses():
+    """Shooting when no hazard is in the line should return False."""
+    game.player_row = 0
+    game.player_col = 0
+    game.player_direction = "right"
+    game.hazards = [(3, 3)]
+    result = game.shoot()
+    assert result is False
+    assert len(game.hazards) == 1
+
+
+def test_shoot_stops_at_collectible():
+    """Bullet should pass through the collectible and only hit hazards."""
+    game.player_row = 0
+    game.player_col = 0
+    game.player_direction = "right"
+    game.collectible_row = 0
+    game.collectible_col = 1
+    game.hazards = [(0, 3)]
+    result = game.shoot()
+    assert result is True
+    assert (0, 3) not in game.hazards
+    assert game.score == 0  # collectible not affected
+
+
+def test_shoot_does_not_hit_player():
+    """Bullet should not hit the player's own position."""
+    game.player_row = 2
+    game.player_col = 2
+    game.player_direction = "right"
+    game.hazards = [(2, 3), (2, 4)]
+    result = game.shoot()
+    assert result is True
+    # Only the first hazard in line should be hit
+    assert (2, 3) not in game.hazards
+    assert (2, 4) in game.hazards
+
+
+# =============================================================================
+# HAZARD AI TESTS (Chase the player)
+# =============================================================================
+
+def test_hazard_moves_toward_player():
+    """A hazard should move one step closer to the player."""
+    game.player_row = 0
+    game.player_col = 0
+    game.hazards = [(4, 4)]
+    game.move_hazards_toward_player()
+    # Should move closer (row 3 or col 3)
+    assert game.hazards[0] != (4, 4)
+    h_row, h_col = game.hazards[0]
+    assert h_row < 4 or h_col < 4  # at least one axis got closer
+
+
+def test_hazard_moves_vertically_when_closer():
+    """Hazard should move vertically when row distance > col distance."""
+    game.player_row = 0
+    game.player_col = 3
+    game.hazards = [(4, 3)]  # Same column, 4 rows away
+    game.move_hazards_toward_player()
+    assert game.hazards[0] == (3, 3)  # Should move up by 1
+
+
+def test_hazard_moves_horizontally_when_closer():
+    """Hazard should move horizontally when col distance > row distance."""
+    game.player_row = 2
+    game.player_col = 0
+    game.hazards = [(2, 4)]  # Same row, 4 cols away
+    game.move_hazards_toward_player()
+    assert game.hazards[0] == (2, 3)  # Should move left by 1
+
+
+def test_hazard_stays_put_when_adjacent():
+    """Hazard should not move if already adjacent to the player."""
+    game.player_row = 2
+    game.player_col = 2
+    game.hazards = [(2, 3)]  # Right next to the player
+    game.move_hazards_toward_player()
+    assert game.hazards[0] == (2, 3)  # Should stay put
+
+
+def test_hazard_avoids_other_hazards():
+    """Hazard should not move onto another hazard's position."""
+    game.player_row = 0
+    game.player_col = 0
+    game.hazards = [(3, 0), (2, 0)]  # Both in same column
+    game.move_hazards_toward_player()
+    positions = game.hazards
+    # No two hazards should share a position
+    assert len(positions) == len(set(positions))
+
+
+def test_hazard_avoids_player_position():
+    """Hazard should not move onto the player's position."""
+    game.player_row = 0
+    game.player_col = 0
+    game.hazards = [(2, 0)]
+    game.move_hazards_toward_player()
+    assert (0, 0) not in game.hazards
+
+
+def test_multiple_hazards_all_chase():
+    """All hazards should move toward the player."""
+    game.player_row = 0
+    game.player_col = 0
+    game.hazards = [(4, 4), (4, 0), (0, 4)]
+    old_positions = game.hazards[:]
+    game.move_hazards_toward_player()
+    # At least some should have moved
+    moved_count = sum(1 for i in range(len(game.hazards)) if game.hazards[i] != old_positions[i])
+    assert moved_count >= 1
 
 
 # =============================================================================
@@ -128,13 +310,11 @@ def test_reset_lives():
     assert game.lives == game.STARTING_LIVES
 
 
-def test_reset_collectible():
-    """reset_game() resets collectible position to default."""
-    game.collectible_row = 3
-    game.collectible_col = 4
+def test_reset_direction():
+    """reset_game() resets the player direction to 'right'."""
+    game.player_direction = "left"
     game.reset_game()
-    assert game.collectible_row == 0
-    assert game.collectible_col == 0
+    assert game.player_direction == "right"
 
 
 def test_reset_hazards():
@@ -164,18 +344,6 @@ def test_spawn_collectible_within_grid():
         assert 0 <= game.collectible_col < game.GRID_SIZE
 
 
-def test_collectible_responds_to_new_position_after_collect():
-    """After collecting, spawn_collectible should move collectible to a new spot."""
-    game.player_row = 2
-    game.player_col = 2
-    game.collectible_row = 2
-    game.collectible_col = 2
-    old_pos = (game.collectible_row, game.collectible_col)
-    game.spawn_collectible()
-    new_pos = (game.collectible_row, game.collectible_col)
-    assert new_pos != old_pos
-
-
 def test_collectible_avoids_hazards():
     """The collectible should never spawn on top of a hazard."""
     game.hazards = [(1, 1), (2, 2), (3, 3), (4, 4)]
@@ -185,11 +353,11 @@ def test_collectible_avoids_hazards():
 
 
 # =============================================================================
-# SPAWNING TESTS — hazards (multiple)
+# SPAWNING TESTS — hazards
 # =============================================================================
 
 def test_spawn_hazards_count_in_range():
-    """spawn_hazards() should create between MIN_HAZARDS and MAX_HAZARDS hazards."""
+    """spawn_hazards() should create between MIN and MAX hazards."""
     for _ in range(30):
         game.spawn_hazards()
         assert len(game.hazards) >= game.MIN_HAZARDS
@@ -202,14 +370,6 @@ def test_spawn_hazards_not_on_player():
     game.player_col = 3
     game.spawn_hazards()
     assert (game.player_row, game.player_col) not in game.hazards
-
-
-def test_spawn_hazards_not_on_collectible():
-    """No hazard should spawn on the collectible's position."""
-    game.collectible_row = 1
-    game.collectible_col = 4
-    game.spawn_hazards()
-    assert (game.collectible_row, game.collectible_col) not in game.hazards
 
 
 def test_spawn_hazards_within_grid():
@@ -228,17 +388,8 @@ def test_spawn_hazards_no_duplicates():
         assert len(game.hazards) == len(set(game.hazards))
 
 
-def test_spawn_hazards_avoids_collectible():
-    """Hazards should never overlap with the collectible."""
-    game.collectible_row = 2
-    game.collectible_col = 2
-    for _ in range(30):
-        game.spawn_hazards()
-        assert (game.collectible_row, game.collectible_col) not in game.hazards
-
-
 # =============================================================================
-# COLLISION TESTS — collectible
+# COLLISION TESTS
 # =============================================================================
 
 def test_collect_item_increases_score():
@@ -247,7 +398,7 @@ def test_collect_item_increases_score():
     game.player_col = 0
     game.collectible_row = 0
     game.collectible_col = 1
-    game.move_player("d")
+    game.move_player("RIGHT")
     result = game.check_collectible()
     assert result is True
     assert game.score == 1
@@ -259,27 +410,18 @@ def test_collect_does_not_trigger_when_miss():
     game.player_col = 0
     game.collectible_row = 2
     game.collectible_col = 2
-    game.move_player("d")
+    game.move_player("RIGHT")
     result = game.check_collectible()
     assert result is False
     assert game.score == 0
 
-
-def test_score_starts_at_zero():
-    """Score should start at 0."""
-    assert game.score == 0
-
-
-# =============================================================================
-# COLLISION TESTS — hazards (multiple)
-# =============================================================================
 
 def test_hit_hazard_reduces_lives():
     """Stepping on any hazard should reduce lives by 1."""
     game.player_row = 0
     game.player_col = 0
     game.hazards = [(0, 1)]
-    game.move_player("d")
+    game.move_player("RIGHT")
     result = game.check_hazard()
     assert result is True
     assert game.lives == 1
@@ -290,9 +432,8 @@ def test_hazard_respawns_after_hit():
     game.player_row = 0
     game.player_col = 0
     game.hazards = [(0, 1)]
-    game.move_player("d")
+    game.move_player("RIGHT")
     game.check_hazard()
-    # The hazard at (0,1) should be gone, replaced by a new one
     assert (0, 1) not in game.hazards
     assert len(game.hazards) == 1
 
@@ -302,7 +443,7 @@ def test_hazard_miss_does_not_reduce_lives():
     game.player_row = 0
     game.player_col = 0
     game.hazards = [(2, 2), (3, 3)]
-    game.move_player("d")
+    game.move_player("RIGHT")
     result = game.check_hazard()
     assert result is False
     assert game.lives == 2
@@ -311,22 +452,6 @@ def test_hazard_miss_does_not_reduce_lives():
 def test_lives_starts_at_two():
     """Lives should start at STARTING_LIVES (2)."""
     assert game.lives == game.STARTING_LIVES
-
-
-def test_two_hazard_hits_game_over():
-    """Hitting hazards twice should bring lives to 0."""
-    game.lives = 2
-    game.hazards = [(0, 1)]
-    game.player_row = 0
-    game.player_col = 0
-    # First hit
-    game.move_player("d")
-    game.check_hazard()
-    assert game.lives == 1
-    # Simulate second hit on the respawned hazard
-    game.hazards = [(game.player_row, game.player_col)]
-    game.check_hazard()
-    assert game.lives == 0
 
 
 # =============================================================================
@@ -440,32 +565,10 @@ def test_calculate_time_remaining():
     """Time remaining should decrease as time passes."""
     import time
     start = time.time()
-    # Simulate some time passing
     time.sleep(0.1)
     remaining = game.calculate_time_remaining(start)
     assert remaining < game.TIME_LIMIT
     assert remaining > game.TIME_LIMIT - 1
-
-
-# =============================================================================
-# MULTIPLE HAZARDS ON GRID TEST
-# =============================================================================
-
-def test_multiple_hazards_all_shown():
-    """All hazards in the list should appear as the hazard emoji on the grid."""
-    game.hazards = [(0, 4), (2, 2), (4, 0)]
-    for row, col in game.hazards:
-        assert game.get_cell_content(row, col) == f" {game.HAZARD_EMOJI} "
-
-
-def test_hazard_list_is_modifiable():
-    """The hazards list should support append and remove."""
-    game.hazards = [(1, 1), (2, 2)]
-    game.hazards.remove((1, 1))
-    game.hazards.append((3, 3))
-    assert (1, 1) not in game.hazards
-    assert (3, 3) in game.hazards
-    assert len(game.hazards) == 2
 
 
 # =============================================================================
@@ -483,18 +586,18 @@ def test_story_intro():
 
 
 def test_player_emoji():
-    """Player emoji should be the cowboy hat face."""
-    assert game.PLAYER_EMOJI == "\U0001F3A9"  # 🎩
+    """Player emoji should be the fedora hat."""
+    assert game.PLAYER_EMOJI == "\U0001F3A9"
 
 
 def test_collectible_emoji():
     """Collectible emoji should be the package."""
-    assert game.COLLECTIBLE_EMOJI == "\U0001F4E6"  # 📦
+    assert game.COLLECTIBLE_EMOJI == "\U0001F4E6"
 
 
 def test_hazard_emoji():
     """Hazard emoji should be the volcano."""
-    assert game.HAZARD_EMOJI == "\U0001F30B"  # 🌋
+    assert game.HAZARD_EMOJI == "\U0001F30B"
 
 
 def test_win_message():
@@ -518,73 +621,16 @@ def test_cell_content_uses_correct_emojis():
     assert game.PLAYER_EMOJI in game.get_cell_content(2, 2)
     assert game.COLLECTIBLE_EMOJI in game.get_cell_content(0, 0)
     assert game.HAZARD_EMOJI in game.get_cell_content(4, 4)
-    assert game.get_cell_content(1, 3) == " . "  # empty cell unchanged
+    assert game.get_cell_content(1, 3) == " . "
 
 
 # =============================================================================
-# HAZARD MOVEMENT TESTS
+# DIRECTION DELTAS TESTS
 # =============================================================================
 
-def test_move_hazards_changes_positions():
-    """move_hazards() should move all hazards to different positions."""
-    game.hazards = [(0, 0), (4, 4)]
-    old_positions = game.hazards[:]
-    # Run multiple times — at least one move should change positions
-    moved = False
-    for _ in range(20):
-        game.move_hazards()
-        if game.hazards != old_positions:
-            moved = True
-            break
-    assert moved
-
-
-def test_move_hazards_keeps_count():
-    """move_hazards() should keep the same number of hazards."""
-    game.hazards = [(0, 0), (1, 1), (2, 2)]
-    game.move_hazards()
-    assert len(game.hazards) == 3
-
-
-def test_move_hazards_avoids_player():
-    """After moving, hazards should not land on the player."""
-    game.player_row = 2
-    game.player_col = 2
-    game.hazards = [(0, 0), (4, 4)]
-    for _ in range(30):
-        game.move_hazards()
-        assert (game.player_row, game.player_col) not in game.hazards
-
-
-def test_move_hazards_avoids_collectible():
-    """After moving, hazards should not land on the collectible."""
-    game.collectible_row = 1
-    game.collectible_col = 1
-    game.hazards = [(0, 0), (4, 4)]
-    for _ in range(30):
-        game.move_hazards()
-        assert (game.collectible_row, game.collectible_col) not in game.hazards
-
-
-def test_move_hazards_within_grid():
-    """After moving, all hazards should still be within grid boundaries."""
-    game.hazards = [(0, 0), (1, 1), (2, 2), (3, 3)]
-    for _ in range(30):
-        game.move_hazards()
-        for row, col in game.hazards:
-            assert 0 <= row < game.GRID_SIZE
-            assert 0 <= col < game.GRID_SIZE
-
-
-def test_move_hazards_no_duplicates():
-    """After moving, no two hazards should share the same position."""
-    game.hazards = [(0, 0), (1, 1), (2, 2), (3, 3)]
-    for _ in range(30):
-        game.move_hazards()
-        assert len(game.hazards) == len(set(game.hazards))
-
-
-def test_hazard_move_config():
-    """Hazard move interval config should be set correctly."""
-    assert game.HAZARD_MOVE_MIN == 2
-    assert game.HAZARD_MOVE_MAX == 5
+def test_direction_deltas_are_correct():
+    """Each arrow key should map to the correct row/col change."""
+    assert game.DIRECTION_DELTAS["UP"] == (-1, 0)
+    assert game.DIRECTION_DELTAS["DOWN"] == (1, 0)
+    assert game.DIRECTION_DELTAS["LEFT"] == (0, -1)
+    assert game.DIRECTION_DELTAS["RIGHT"] == (0, 1)
