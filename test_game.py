@@ -513,13 +513,6 @@ def test_reset_pending_respawns():
     assert game.pending_respawns == []
 
 
-def test_reset_first_frame():
-    """reset_game() resets _first_frame to True."""
-    game._first_frame = False
-    game.reset_game()
-    assert game._first_frame is True
-
-
 # =============================================================================
 # SPAWNING TESTS — collectible
 # =============================================================================

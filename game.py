@@ -91,9 +91,6 @@ hazard_tick_counter = 0
 # Timestamps when destroyed hazards should respawn (2-second delay)
 pending_respawns: list[float] = []
 
-# Track whether we've drawn the first frame (for zero-flicker rendering)
-_first_frame = True
-
 
 # =============================================================================
 # SINGLE KEYPRESS INPUT (with arrow key support)
@@ -208,15 +205,11 @@ def get_cell_content(row: int, col: int) -> str:
 
 def draw_grid(time_remaining: float) -> None:
     """
-    Draw the full game frame with ZERO flicker.
-    Strategy:
-      - First frame:  clear the whole screen once, then write.
-      - Every frame:  move cursor to top-left and overwrite in place.
-    The entire frame is built as ONE string and written in ONE call,
-    so the terminal never shows a blank or half-drawn screen.
+    Draw the full game frame — ONE write, ZERO flicker, ZERO ghosting.
+    Every frame: jump to top-left, write the whole grid, then clear
+    any leftover lines below. All in a single sys.stdout.write() call,
+    so the terminal renders the entire frame in one shot.
     """
-    global _first_frame
-
     # --- Build the frame as a list of lines ---
     lines = []
     lines.append(f"=== {GAME_NAME} ===")
@@ -230,15 +223,8 @@ def draw_grid(time_remaining: float) -> None:
 
     frame = "\n".join(lines)
 
-    # --- Write the frame in ONE atomic operation ---
-    if _first_frame:
-        # First frame: clear screen completely, then write
-        sys.stdout.write(f"\033[2J\033[H{frame}")
-        _first_frame = False
-    else:
-        # All other frames: just jump to top-left and overwrite
-        sys.stdout.write(f"\033[H{frame}")
-
+    # \033[H  = cursor to top-left    \033[J = clear from cursor to end
+    sys.stdout.write(f"\033[H{frame}\033[J")
     sys.stdout.flush()
 
 
@@ -250,7 +236,7 @@ def reset_game() -> None:
     """Reset all game state to default values for a fresh game."""
     global player_row, player_col, score, lives, player_direction
     global collectible_row, collectible_col, hazards, hazard_tick_counter
-    global pending_respawns, _first_frame
+    global pending_respawns
 
     player_row = 0
     player_col = 0
@@ -262,7 +248,6 @@ def reset_game() -> None:
     hazards = []
     hazard_tick_counter = 0
     pending_respawns = []
-    _first_frame = True
 
 
 # =============================================================================
