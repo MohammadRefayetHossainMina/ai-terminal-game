@@ -1,6 +1,9 @@
 import os
 import random
+import sys
 import time
+import tty
+import termios
 
 # =============================================================================
 # GAME CONFIGURATION
@@ -10,6 +13,8 @@ GRID_SIZE = 5          # The grid is 5x5 cells
 WIN_SCORE = 10         # Collect 10 items to win
 TIME_LIMIT = 60        # 60 seconds to complete the game
 STARTING_LIVES = 2     # Player begins with 2 lives
+MIN_HAZARDS = 2        # Minimum number of hazards on the grid
+MAX_HAZARDS = 4        # Maximum number of hazards on the grid
 
 # =============================================================================
 # GAME STATE
@@ -25,8 +30,41 @@ lives = STARTING_LIVES # How many lives the player has left
 collectible_row = 0    # Row of the collectible item '*'
 collectible_col = 0    # Column of the collectible item '*'
 
-hazard_row = 0         # Row of the hazard tile 'X'
-hazard_col = 0         # Column of the hazard tile 'X'
+# Hazards are stored as a list of (row, col) tuples.
+# There will be 2 to 4 hazards on the grid at any time.
+hazards: list[tuple[int, int]] = []
+
+
+# =============================================================================
+# SINGLE KEYPRESS INPUT
+# =============================================================================
+# Instead of waiting for the player to press Enter, we read one character
+# at a time directly from the terminal. This makes movement feel instant.
+# We use the 'tty' and 'termios' modules which work on Linux/Mac.
+
+def get_keypress() -> str:
+    """
+    Wait for the player to press a single key and return it immediately.
+    No Enter needed! The terminal is temporarily switched to 'raw' mode
+    so each keypress is captured right away.
+
+    Returns:
+        The character the player pressed (e.g., 'w', 'a', 's', 'd', 'q').
+    """
+    # Save the current terminal settings so we can restore them later
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    try:
+        # Switch terminal to raw mode — captures keys without waiting for Enter
+        tty.setraw(fd)
+        # Read one character from standard input
+        key = sys.stdin.read(1)
+    finally:
+        # Always restore the terminal settings, even if something goes wrong
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    return key
 
 
 # =============================================================================
@@ -41,7 +79,8 @@ def clear_screen() -> None:
 def draw_header(time_remaining: float) -> None:
     """Print the game title and current stats (score, lives, time)."""
     print("=== My Terminal Game ===")
-    print(f"Score: {score}/{WIN_SCORE}  |  Lives: {lives}  |  Time left: {time_remaining:.1f}s\n")
+    print(f"Score: {score}/{WIN_SCORE}  |  Lives: {lives}  |  Time left: {time_remaining:.1f}s")
+    print("WASD to move | Q to quit\n")
 
 
 def get_cell_content(row: int, col: int) -> str:
@@ -51,14 +90,14 @@ def get_cell_content(row: int, col: int) -> str:
     Priority order:
       1. 'P' — if the player is here
       2. '*' — if the collectible is here
-      3. 'X' — if the hazard is here
+      3. 'X' — if any hazard is here
       4. '.' — empty cell
     """
     if row == player_row and col == player_col:
         return " P "
     elif row == collectible_row and col == collectible_col:
         return " * "
-    elif row == hazard_row and col == hazard_col:
+    elif (row, col) in hazards:
         return " X "
     else:
         return " . "
@@ -78,6 +117,24 @@ def draw_grid(time_remaining: float) -> None:
         print()
 
     print()  # Extra blank line for readability
+
+
+# =============================================================================
+# GAME STATE MANAGEMENT
+# =============================================================================
+
+def reset_game() -> None:
+    """Reset all game state to default values for a fresh game."""
+    global player_row, player_col, score, lives
+    global collectible_row, collectible_col, hazards
+
+    player_row = 0
+    player_col = 0
+    score = 0
+    lives = STARTING_LIVES
+    collectible_row = 0
+    collectible_col = 0
+    hazards = []
 
 
 # =============================================================================
@@ -110,10 +167,12 @@ def move_player(direction: str) -> None:
 # =============================================================================
 
 def is_position_occupied(row: int, col: int) -> bool:
-    """Check if a position is taken by the player or the collectible."""
+    """Check if a position is taken by the player, collectible, or any hazard."""
     if row == player_row and col == player_col:
         return True
     if row == collectible_row and col == collectible_col:
+        return True
+    if (row, col) in hazards:
         return True
     return False
 
@@ -125,24 +184,40 @@ def spawn_collectible() -> None:
     while True:
         collectible_row = random.randint(0, GRID_SIZE - 1)
         collectible_col = random.randint(0, GRID_SIZE - 1)
-        # The collectible only needs to avoid the player's position
-        if collectible_row != player_row or collectible_col != player_col:
-            break
-
-
-def spawn_hazard() -> None:
-    """Place the hazard 'X' at a random empty position on the grid."""
-    global hazard_row, hazard_col
-
-    while True:
-        hazard_row = random.randint(0, GRID_SIZE - 1)
-        hazard_col = random.randint(0, GRID_SIZE - 1)
-        # The hazard can't overlap with the player OR the collectible
-        if hazard_row == player_row and hazard_col == player_col:
+        # Avoid the player and all hazards (but NOT itself — it hasn't been placed yet)
+        if (collectible_row, collectible_col) == (player_row, player_col):
             continue
-        if hazard_row == collectible_row and hazard_col == collectible_col:
+        if (collectible_row, collectible_col) in hazards:
             continue
         break
+
+
+def _spawn_one_hazard() -> tuple[int, int]:
+    """
+    Pick a single random position that isn't occupied by anything.
+    Returns the (row, col) position.
+    """
+    while True:
+        row = random.randint(0, GRID_SIZE - 1)
+        col = random.randint(0, GRID_SIZE - 1)
+        if not is_position_occupied(row, col):
+            return (row, col)
+
+
+def spawn_hazards() -> None:
+    """
+    Place between MIN_HAZARDS and MAX_HAZARDS hazards on the grid.
+    Each hazard is placed at a random empty position.
+    """
+    global hazards
+
+    hazards = []
+    # Pick a random number of hazards between MIN and MAX
+    num_hazards = random.randint(MIN_HAZARDS, MAX_HAZARDS)
+
+    for _ in range(num_hazards):
+        pos = _spawn_one_hazard()
+        hazards.append(pos)
 
 
 # =============================================================================
@@ -164,13 +239,19 @@ def check_collectible() -> bool:
 
 def check_hazard() -> bool:
     """
-    Check if the player stepped on the hazard.
+    Check if the player stepped on any hazard.
     Returns True if the player was hit (a life was lost).
+    If hit, the specific hazard is respawned to a new position.
     """
-    global lives
+    global lives, hazards
 
-    if player_row == hazard_row and player_col == hazard_col:
+    player_pos = (player_row, player_col)
+    if player_pos in hazards:
         lives -= 1
+        # Remove the hazard the player stepped on and respawn a new one
+        hazards.remove(player_pos)
+        new_pos = _spawn_one_hazard()
+        hazards.append(new_pos)
         return True
     return False
 
@@ -190,15 +271,8 @@ def has_lost() -> bool:
 
 
 # =============================================================================
-# GAME LOOP
+# GAME LOOP HELPERS
 # =============================================================================
-
-def start_game() -> None:
-    """Print the welcome message and instructions, then wait for the player."""
-    print("Welcome! Use WASD to move. Collect '*' to score. Avoid 'X'!")
-    print(f"You have {TIME_LIMIT} seconds and {lives} lives. Press 'q' to quit.\n")
-    input("Press Enter to start...")
-
 
 def calculate_time_remaining(start_time: float) -> float:
     """Calculate how many seconds are left in the game."""
@@ -206,60 +280,53 @@ def calculate_time_remaining(start_time: float) -> float:
     return max(TIME_LIMIT - elapsed, 0.0)
 
 
-def handle_time_up() -> None:
-    """Show the time's up message and end the game."""
-    draw_grid(0.0)
-    print(f"Time's up! You only collected {score}/{WIN_SCORE} items.")
-    print("Game over! Better luck next time.")
-
-
-def handle_quit() -> bool:
-    """Show the goodbye message. Returns True to signal the game should end."""
-    print("Thanks for playing! Goodbye!")
-    return True
-
-
-def handle_hazard_hit(time_remaining: float) -> bool:
+def play_again_prompt() -> bool:
     """
-    Handle what happens when the player steps on a hazard.
-    Returns True if the game is over (no lives left).
+    Ask the player if they want to play again.
+    Returns True if they type 'y', False for anything else.
     """
-    if has_lost():
-        draw_grid(time_remaining)
-        print("Game Over! You ran out of lives.")
-        return True
-    else:
-        # Player survived — move the hazard to a new spot
-        spawn_hazard()
-        return False
+    print("\nPlay again? (y/n): ")
+    while True:
+        key = get_keypress().lower()
+        if key == "y":
+            return True
+        elif key == "n":
+            return False
+        # Ignore any other key — just wait for y or n
 
 
-def handle_collectible_pickup(time_remaining: float, elapsed: float) -> bool:
-    """
-    Handle what happens when the player picks up a collectible.
-    Returns True if the player has won.
-    """
-    if has_won():
-        draw_grid(time_remaining)
-        print(f"You win! Final score: {score} in {elapsed:.1f} seconds!")
-        return True
-    else:
-        # Player collected an item — spawn a new one
-        spawn_collectible()
-        return False
+def show_end_screen(message: str) -> None:
+    """Display a final message (win, lose, or time's up)."""
+    clear_screen()
+    print("=== My Terminal Game ===\n")
+    print(message)
 
 
-def main() -> None:
-    """
-    The main game loop. Runs repeatedly until the game ends.
-    Each turn: draw grid → get input → move player → check collisions → repeat.
-    """
-    global score, lives
+# =============================================================================
+# MAIN GAME LOOP
+# =============================================================================
 
+def run_game() -> bool:
+    """
+    Run a single game from start to finish.
+
+    Returns:
+        True if the player wants to play again, False to quit.
+    """
     # Set up the initial game state
+    reset_game()
     spawn_collectible()
-    spawn_hazard()
-    start_game()
+    spawn_hazards()
+
+    # Show the welcome screen and wait for the player to start
+    clear_screen()
+    print("=== My Terminal Game ===\n")
+    print("Collect '*' to score. Avoid 'X' hazards!")
+    print(f"You have {TIME_LIMIT} seconds, {STARTING_LIVES} lives,")
+    print(f"and {len(hazards)} hazards to dodge.")
+    print("WASD to move. Q to quit.\n")
+    print("Press any key to start...")
+    get_keypress()
 
     start_time = time.time()
 
@@ -267,31 +334,58 @@ def main() -> None:
         # --- Check if time has run out ---
         time_remaining = calculate_time_remaining(start_time)
         if time_remaining <= 0:
-            handle_time_up()
-            break
+            show_end_screen(
+                f"Time's up! You collected {score}/{WIN_SCORE} items.\n"
+                "Better luck next time!"
+            )
+            return play_again_prompt()
 
-        # --- Draw the grid and get player input ---
+        # --- Draw the grid and wait for a single keypress ---
         draw_grid(time_remaining)
-        user_input = input("Your move: ").lower()
+        key = get_keypress().lower()
 
         # --- Handle quit ---
-        if user_input == "q":
-            if handle_quit():
-                break
+        if key == "q":
+            show_end_screen("Thanks for playing! Goodbye!")
+            return False
 
         # --- Move the player ---
-        move_player(user_input)
+        move_player(key)
 
-        # --- Check if the player hit the hazard ---
+        # --- Check if the player hit a hazard ---
         if check_hazard():
-            if handle_hazard_hit(time_remaining):
-                break
+            if has_lost():
+                show_end_screen(
+                    f"Game Over! You collected {score}/{WIN_SCORE} items "
+                    "but ran out of lives."
+                )
+                return play_again_prompt()
 
         # --- Check if the player collected an item ---
         if check_collectible():
-            elapsed = time.time() - start_time
-            if handle_collectible_pickup(time_remaining, elapsed):
-                break
+            if has_won():
+                elapsed = time.time() - start_time
+                show_end_screen(
+                    f"You win! Collected {score} items in {elapsed:.1f} seconds!"
+                )
+                return play_again_prompt()
+            else:
+                # Player collected an item — spawn a new one
+                spawn_collectible()
+
+
+def main() -> None:
+    """
+    Top-level game loop. Handles the play-again cycle.
+    Keeps running until the player chooses not to play again.
+    """
+    while True:
+        play_again = run_game()
+        if not play_again:
+            break
+
+    clear_screen()
+    print("Thanks for playing! See ya next time!")
 
 
 # =============================================================================
