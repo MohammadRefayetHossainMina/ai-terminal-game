@@ -182,13 +182,6 @@ def show_cursor() -> None:
     sys.stdout.flush()
 
 
-def draw_header(time_remaining: float) -> None:
-    """Print the game title and current stats."""
-    print(f"=== {GAME_NAME} ===")
-    print(f"Score: {score}/{WIN_SCORE}  |  Lives: {lives}  |  Time left: {time_remaining:.1f}s")
-    print(f"{PLAYER_EMOJI} move | {BULLET_EMOJI} auto-shoot (space) | Q quit\n")
-
-
 def get_cell_content(row: int, col: int) -> str:
     """
     Decide what to display in a single grid cell.
@@ -207,16 +200,29 @@ def get_cell_content(row: int, col: int) -> str:
 
 
 def draw_grid(time_remaining: float) -> None:
-    """Draw the full game grid with header, stats, and all cells."""
-    clear_screen()
-    draw_header(time_remaining)
+    """
+    Draw the full game frame in one single write to avoid flicker.
+    We build the entire frame as a list of lines, join them,
+    then write everything to the terminal at once.
+    """
+    lines = []
 
+    # --- Header ---
+    lines.append(f"=== {GAME_NAME} ===")
+    lines.append(f"Score: {score}/{WIN_SCORE}  |  Lives: {lives}  |  Time left: {time_remaining:.1f}s")
+    lines.append(f"{PLAYER_EMOJI} move | {BULLET_EMOJI} auto-shoot (space) | Q quit\n")
+
+    # --- Grid rows ---
     for row in range(GRID_SIZE):
-        for col in range(GRID_SIZE):
-            print(get_cell_content(row, col), end="")
-        print()
+        line = "".join(get_cell_content(row, col) for col in range(GRID_SIZE))
+        lines.append(line)
 
-    print()
+    # --- Write the entire frame in ONE shot ---
+    # \033[H  = cursor to top-left (overwrite, don't clear)
+    # \033[J  = clear any leftover chars below (handles frame size changes)
+    frame = "\n".join(lines)
+    sys.stdout.write(f"\033[H{frame}\033[J")
+    sys.stdout.flush()
 
 
 # =============================================================================
@@ -555,9 +561,10 @@ def end_game(message: str) -> bool:
     Returns True if the player wants another round, False to quit.
     """
     show_cursor()  # Bring back the cursor for the prompt
-    clear_screen()
-    print(f"=== {GAME_NAME} ===\n")
-    print(message)
+    # Build the entire screen as one string to avoid flicker
+    frame = f"\033[H\033[J=== {GAME_NAME} ===\n\n{message}"
+    sys.stdout.write(frame)
+    sys.stdout.flush()
     return play_again_prompt()
 
 
@@ -575,15 +582,22 @@ def setup_game() -> None:
 def show_welcome_screen() -> None:
     """Display the intro screen with instructions, then wait for a keypress."""
     hide_cursor()  # Hide blinking cursor during gameplay
-    clear_screen()
-    print(f"=== {GAME_NAME} ===\n")
-    print(f"{STORY_INTRO}!\n")
-    print(f"Collect {COLLECTIBLE_EMOJI} to score. Avoid {HAZARD_EMOJI} traps!")
-    print(f"Press SPACE to auto-shoot the nearest {HAZARD_EMOJI} with {BULLET_EMOJI}!")
-    print(f"{WALL_EMOJI} walls block your path — and the hazards'!")
-    print(f"You have {TIME_LIMIT} seconds and {STARTING_LIVES} lives.")
-    print("Arrow keys to move. Q to quit.\n")
-    print("Press any key to start...")
+    # Build the entire screen as one string to avoid flicker
+    frame = "\n".join([
+        f"\033[H\033[J=== {GAME_NAME} ===",
+        "",
+        f"{STORY_INTRO}!",
+        "",
+        f"Collect {COLLECTIBLE_EMOJI} to score. Avoid {HAZARD_EMOJI} traps!",
+        f"Press SPACE to auto-shoot the nearest {HAZARD_EMOJI} with {BULLET_EMOJI}!",
+        f"{WALL_EMOJI} walls block your path — and the hazards'!",
+        f"You have {TIME_LIMIT} seconds and {STARTING_LIVES} lives.",
+        "Arrow keys to move. Q to quit.",
+        "",
+        "Press any key to start...",
+    ])
+    sys.stdout.write(frame)
+    sys.stdout.flush()
     get_keypress()
 
 
@@ -723,8 +737,8 @@ def main() -> None:
             break
 
     show_cursor()  # Always restore cursor on exit
-    clear_screen()
-    print("Thanks for playing! See ya, mate!")
+    sys.stdout.write("\033[H\033[JThanks for playing! See ya, mate!\n")
+    sys.stdout.flush()
 
 
 # =============================================================================
