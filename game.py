@@ -532,31 +532,30 @@ def play_again_prompt() -> bool:
             return False
 
 
-def show_end_screen(message: str) -> None:
-    """Display a final message."""
+def end_game(message: str) -> bool:
+    """
+    Show the end screen with a message, then ask to play again.
+    Returns True if the player wants another round, False to quit.
+    """
     clear_screen()
     print(f"=== {GAME_NAME} ===\n")
     print(message)
+    return play_again_prompt()
 
 
 # =============================================================================
-# MAIN GAME LOOP
+# SETUP AND WELCOME
 # =============================================================================
 
-def run_game() -> bool:
-    """
-    Run a single game from start to finish.
-
-    Returns:
-        True if the player wants to play again, False to quit.
-    """
-    global hazard_tick_counter
-
+def setup_game() -> None:
+    """Reset all state and place items on the grid for a fresh game."""
     reset_game()
     spawn_collectible()
     spawn_hazards()
 
-    # --- Welcome screen ---
+
+def show_welcome_screen() -> None:
+    """Display the intro screen with instructions, then wait for a keypress."""
     clear_screen()
     print(f"=== {GAME_NAME} ===\n")
     print(f"{STORY_INTRO}!\n")
@@ -568,73 +567,133 @@ def run_game() -> bool:
     print("Press any key to start...")
     get_keypress()
 
+
+# =============================================================================
+# TICK PROCESSING — what happens each frame
+# =============================================================================
+
+def move_hazards_on_idle() -> bool:
+    """
+    Called when no key was pressed (idle tick).
+    Moves hazards toward the player on their slow schedule.
+    Returns True if a hazard reached the player and killed them.
+    """
+    global hazard_tick_counter
+
+    hazard_tick_counter += 1
+
+    # Only move hazards every N ticks (slower movement)
+    if hazard_tick_counter % HAZARD_MOVE_EVERY_N_TICKS != 0:
+        return False
+
+    # Move all hazards one step closer to the player
+    move_hazards_toward_player()
+
+    # Did any hazard reach the player?
+    if check_hazard() and has_lost():
+        return True
+
+    return False
+
+
+def process_keypress(key: str) -> str:
+    """
+    Handle a single keypress from the player.
+    Returns:
+        'quit'  — player pressed Q
+        'acted' — player shot or moved
+        'ignore' — unknown key, do nothing
+    """
+    if key == "q":
+        return "quit"
+
+    if key == " ":
+        shoot()  # Auto-target and fire at the nearest hazard
+        return "acted"
+
+    if key in DIRECTION_LABELS:
+        move_player(key)
+        return "acted"
+
+    return "ignore"
+
+
+def check_player_status() -> str:
+    """
+    After the player moved or shot, check what happened.
+    Returns:
+        'dead'      — player hit a hazard and lost all lives
+        'won'       — player collected enough items to win
+        'collected' — player picked up an item (game continues)
+        'ok'        — nothing special happened
+    """
+    if check_hazard() and has_lost():
+        return "dead"
+
+    if check_collectible():
+        if has_won():
+            return "won"
+        return "collected"
+
+    return "ok"
+
+
+# =============================================================================
+# MAIN GAME LOOP
+# =============================================================================
+
+def run_game() -> bool:
+    """
+    Run a single game from start to finish.
+    Returns True if the player wants to play again, False to quit.
+    """
+    # --- Set up the board ---
+    setup_game()
+    show_welcome_screen()
     start_time = time.time()
 
+    # --- Main loop: one iteration per "tick" ---
     while True:
-        # --- Check time ---
+
+        # 1. Has time run out?
         time_remaining = calculate_time_remaining(start_time)
         if time_remaining <= 0:
-            show_end_screen(
-                f"Time's up! You collected {score}/{WIN_SCORE} treasures.\n"
-                f"{LOSE_MESSAGE}!"
-            )
-            return play_again_prompt()
+            msg = f"Time's up! You collected {score}/{WIN_SCORE} treasures.\n{LOSE_MESSAGE}!"
+            return end_game(msg)
 
-        # --- Draw the grid ---
+        # 2. Draw the grid
         draw_grid(time_remaining)
 
-        # --- Wait for input (hazards chase while you think!) ---
+        # 3. Wait for player input (with timeout so hazards can move)
         key = get_keypress_with_timeout(0.3)
 
-        # --- Tick the hazard counter ---
-        hazard_tick_counter += 1
-
-        # --- No key pressed — hazards move on their own schedule ---
+        # 4. No key pressed → hazards move on their own schedule
         if key is None:
-            # Only move hazards every N ticks (slower movement)
-            if hazard_tick_counter % HAZARD_MOVE_EVERY_N_TICKS == 0:
-                move_hazards_toward_player()
-                # Check if hazards reached the player after moving
-                if check_hazard():
-                    if has_lost():
-                        show_end_screen(
-                            f"{LOSE_MESSAGE}! You collected {score}/{WIN_SCORE} treasures "
-                            "but the traps got you."
-                        )
-                        return play_again_prompt()
-            continue  # Redraw grid
+            if move_hazards_on_idle():
+                msg = f"{LOSE_MESSAGE}! You collected {score}/{WIN_SCORE} treasures but the traps got you."
+                return end_game(msg)
+            continue  # Redraw grid with updated hazard positions
 
-        # --- Handle quit ---
-        if key == "q":
-            show_end_screen("Thanks for playing! See ya, mate!")
-            return False
+        # 5. Player pressed a key → process it
+        action = process_keypress(key)
 
-        # --- Handle shoot (spacebar) ---
-        if key == " ":
-            shoot()  # Fire! (hazard destroyed if hit)
-        # --- Handle movement (arrow keys) ---
-        elif key in DIRECTION_LABELS:
-            move_player(key)
+        if action == "quit":
+            return end_game("Thanks for playing! See ya, mate!")
 
-        # --- Check if the player walked into a hazard ---
-        if check_hazard():
-            if has_lost():
-                show_end_screen(
-                    f"{LOSE_MESSAGE}! You collected {score}/{WIN_SCORE} treasures "
-                    "but ran out of lives."
-                )
-                return play_again_prompt()
+        # 6. Check what happened after the player acted
+        status = check_player_status()
 
-        # --- Check if the player collected an item ---
-        if check_collectible():
-            if has_won():
-                elapsed = time.time() - start_time
-                show_end_screen(
-                    f"{WIN_MESSAGE}! Collected {score} treasures in {elapsed:.1f} seconds!"
-                )
-                return play_again_prompt()
-            else:
-                spawn_collectible()
+        if status == "dead":
+            msg = f"{LOSE_MESSAGE}! You collected {score}/{WIN_SCORE} treasures but ran out of lives."
+            return end_game(msg)
+
+        if status == "won":
+            elapsed = time.time() - start_time
+            msg = f"{WIN_MESSAGE}! Collected {score} treasures in {elapsed:.1f} seconds!"
+            return end_game(msg)
+
+        if status == "collected":
+            spawn_collectible()  # Place a new treasure on the grid
 
 
 def main() -> None:
