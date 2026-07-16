@@ -392,34 +392,34 @@ def test_is_position_occupied_empty():
 
 
 def test_get_cell_content_player():
-    """Shows 'P' where the player is."""
+    """Shows the player emoji where the player is."""
     game.player_row = 1
     game.player_col = 1
     game.collectible_row = 3
     game.collectible_col = 3
     game.hazards = [(4, 4)]
-    assert game.get_cell_content(1, 1) == " P "
+    assert game.get_cell_content(1, 1) == f" {game.PLAYER_EMOJI} "
 
 
 def test_get_cell_content_collectible():
-    """Shows '*' where the collectible is."""
+    """Shows the collectible emoji where the collectible is."""
     game.player_row = 0
     game.player_col = 0
     game.collectible_row = 2
     game.collectible_col = 3
     game.hazards = [(4, 4)]
-    assert game.get_cell_content(2, 3) == " * "
+    assert game.get_cell_content(2, 3) == f" {game.COLLECTIBLE_EMOJI} "
 
 
 def test_get_cell_content_hazard():
-    """Shows 'X' where any hazard is."""
+    """Shows the hazard emoji where any hazard is."""
     game.player_row = 0
     game.player_col = 0
     game.collectible_row = 2
     game.collectible_col = 2
     game.hazards = [(3, 4), (1, 1)]
-    assert game.get_cell_content(3, 4) == " X "
-    assert game.get_cell_content(1, 1) == " X "
+    assert game.get_cell_content(3, 4) == f" {game.HAZARD_EMOJI} "
+    assert game.get_cell_content(1, 1) == f" {game.HAZARD_EMOJI} "
 
 
 def test_get_cell_content_empty():
@@ -452,10 +452,10 @@ def test_calculate_time_remaining():
 # =============================================================================
 
 def test_multiple_hazards_all_shown():
-    """All hazards in the list should appear as 'X' on the grid."""
+    """All hazards in the list should appear as the hazard emoji on the grid."""
     game.hazards = [(0, 4), (2, 2), (4, 0)]
     for row, col in game.hazards:
-        assert game.get_cell_content(row, col) == " X "
+        assert game.get_cell_content(row, col) == f" {game.HAZARD_EMOJI} "
 
 
 def test_hazard_list_is_modifiable():
@@ -466,3 +466,56 @@ def test_hazard_list_is_modifiable():
     assert (1, 1) not in game.hazards
     assert (3, 3) in game.hazards
     assert len(game.hazards) == 2
+
+
+# =============================================================================
+# THEME TESTS
+# =============================================================================
+
+def test_game_name():
+    """Game name should be set to Australian Jones."""
+    assert game.GAME_NAME == "Australian Jones"
+
+
+def test_story_intro():
+    """Story intro should match the theme."""
+    assert game.STORY_INTRO == "Find and collect treasures and avoid traps"
+
+
+def test_player_emoji():
+    """Player emoji should be the cowboy hat face."""
+    assert game.PLAYER_EMOJI == "\U0001F920"  # 🤠
+
+
+def test_collectible_emoji():
+    """Collectible emoji should be the package."""
+    assert game.COLLECTIBLE_EMOJI == "\U0001F4E6"  # 📦
+
+
+def test_hazard_emoji():
+    """Hazard emoji should be the volcano."""
+    assert game.HAZARD_EMOJI == "\U0001F30B"  # 🌋
+
+
+def test_win_message():
+    """Win message should match the theme."""
+    assert game.WIN_MESSAGE == "You won"
+
+
+def test_lose_message():
+    """Lose message should match the theme."""
+    assert game.LOSE_MESSAGE == "Try again"
+
+
+def test_cell_content_uses_correct_emojis():
+    """Each cell type should return the correct themed emoji."""
+    game.player_row = 2
+    game.player_col = 2
+    game.collectible_row = 0
+    game.collectible_col = 0
+    game.hazards = [(4, 4)]
+
+    assert game.PLAYER_EMOJI in game.get_cell_content(2, 2)
+    assert game.COLLECTIBLE_EMOJI in game.get_cell_content(0, 0)
+    assert game.HAZARD_EMOJI in game.get_cell_content(4, 4)
+    assert game.get_cell_content(1, 3) == " . "  # empty cell unchanged

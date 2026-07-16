@@ -17,6 +17,18 @@ MIN_HAZARDS = 2        # Minimum number of hazards on the grid
 MAX_HAZARDS = 4        # Maximum number of hazards on the grid
 
 # =============================================================================
+# CUSTOM THEME
+# =============================================================================
+
+GAME_NAME = "Australian Jones"
+STORY_INTRO = "Find and collect treasures and avoid traps"
+PLAYER_EMOJI = "\U0001F920"       # 🤠
+COLLECTIBLE_EMOJI = "\U0001F4E6"  # 📦
+HAZARD_EMOJI = "\U0001F30B"       # 🌋
+WIN_MESSAGE = "You won"
+LOSE_MESSAGE = "Try again"
+
+# =============================================================================
 # GAME STATE
 # =============================================================================
 # These variables track the current state of the game.
@@ -78,7 +90,7 @@ def clear_screen() -> None:
 
 def draw_header(time_remaining: float) -> None:
     """Print the game title and current stats (score, lives, time)."""
-    print("=== My Terminal Game ===")
+    print(f"=== {GAME_NAME} ===")
     print(f"Score: {score}/{WIN_SCORE}  |  Lives: {lives}  |  Time left: {time_remaining:.1f}s")
     print("WASD to move | Q to quit\n")
 
@@ -88,17 +100,17 @@ def get_cell_content(row: int, col: int) -> str:
     Decide what to display in a single grid cell.
 
     Priority order:
-      1. 'P' — if the player is here
-      2. '*' — if the collectible is here
-      3. 'X' — if any hazard is here
+      1. Player emoji — if the player is here
+      2. Collectible emoji — if the collectible is here
+      3. Hazard emoji — if any hazard is here
       4. '.' — empty cell
     """
     if row == player_row and col == player_col:
-        return " P "
+        return f" {PLAYER_EMOJI} "
     elif row == collectible_row and col == collectible_col:
-        return " * "
+        return f" {COLLECTIBLE_EMOJI} "
     elif (row, col) in hazards:
-        return " X "
+        return f" {HAZARD_EMOJI} "
     else:
         return " . "
 
@@ -298,7 +310,7 @@ def play_again_prompt() -> bool:
 def show_end_screen(message: str) -> None:
     """Display a final message (win, lose, or time's up)."""
     clear_screen()
-    print("=== My Terminal Game ===\n")
+    print(f"=== {GAME_NAME} ===\n")
     print(message)
 
 
@@ -320,10 +332,11 @@ def run_game() -> bool:
 
     # Show the welcome screen and wait for the player to start
     clear_screen()
-    print("=== My Terminal Game ===\n")
-    print("Collect '*' to score. Avoid 'X' hazards!")
+    print(f"=== {GAME_NAME} ===\n")
+    print(f"{STORY_INTRO}!\n")
+    print(f"Collect {COLLECTIBLE_EMOJI} to score. Avoid {HAZARD_EMOJI} traps!")
     print(f"You have {TIME_LIMIT} seconds, {STARTING_LIVES} lives,")
-    print(f"and {len(hazards)} hazards to dodge.")
+    print(f"and {len(hazards)} traps to dodge.")
     print("WASD to move. Q to quit.\n")
     print("Press any key to start...")
     get_keypress()
@@ -335,8 +348,8 @@ def run_game() -> bool:
         time_remaining = calculate_time_remaining(start_time)
         if time_remaining <= 0:
             show_end_screen(
-                f"Time's up! You collected {score}/{WIN_SCORE} items.\n"
-                "Better luck next time!"
+                f"Time's up! You collected {score}/{WIN_SCORE} treasures.\n"
+                f"{LOSE_MESSAGE}!"
             )
             return play_again_prompt()
 
@@ -346,7 +359,7 @@ def run_game() -> bool:
 
         # --- Handle quit ---
         if key == "q":
-            show_end_screen("Thanks for playing! Goodbye!")
+            show_end_screen("Thanks for playing! See ya, mate!")
             return False
 
         # --- Move the player ---
@@ -356,7 +369,7 @@ def run_game() -> bool:
         if check_hazard():
             if has_lost():
                 show_end_screen(
-                    f"Game Over! You collected {score}/{WIN_SCORE} items "
+                    f"{LOSE_MESSAGE}! You collected {score}/{WIN_SCORE} treasures "
                     "but ran out of lives."
                 )
                 return play_again_prompt()
@@ -366,7 +379,7 @@ def run_game() -> bool:
             if has_won():
                 elapsed = time.time() - start_time
                 show_end_screen(
-                    f"You win! Collected {score} items in {elapsed:.1f} seconds!"
+                    f"{WIN_MESSAGE}! Collected {score} treasures in {elapsed:.1f} seconds!"
                 )
                 return play_again_prompt()
             else:
@@ -385,7 +398,7 @@ def main() -> None:
             break
 
     clear_screen()
-    print("Thanks for playing! See ya next time!")
+    print("Thanks for playing! See ya, mate!")
 
 
 # =============================================================================
