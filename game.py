@@ -159,10 +159,27 @@ def get_keypress_with_timeout(timeout: float) -> str | None:
 # =============================================================================
 # SCREEN DRAWING
 # =============================================================================
+# We use ANSI escape codes instead of os.system("clear") to avoid flickering.
+# \033[H   = move cursor to top-left (home position)
+# \033[J   = clear everything from cursor to end of screen
+# \033[?25l = hide the cursor   \033[?25h = show the cursor
 
 def clear_screen() -> None:
-    """Clear the terminal so each frame replaces the previous one."""
-    os.system("cls" if os.name == "nt" else "clear")
+    """Move cursor to top-left and clear everything below — no flicker."""
+    sys.stdout.write("\033[H\033[J")
+    sys.stdout.flush()
+
+
+def hide_cursor() -> None:
+    """Hide the blinking terminal cursor during gameplay."""
+    sys.stdout.write("\033[?25l")
+    sys.stdout.flush()
+
+
+def show_cursor() -> None:
+    """Show the terminal cursor again (used when the game ends)."""
+    sys.stdout.write("\033[?25h")
+    sys.stdout.flush()
 
 
 def draw_header(time_remaining: float) -> None:
@@ -537,6 +554,7 @@ def end_game(message: str) -> bool:
     Show the end screen with a message, then ask to play again.
     Returns True if the player wants another round, False to quit.
     """
+    show_cursor()  # Bring back the cursor for the prompt
     clear_screen()
     print(f"=== {GAME_NAME} ===\n")
     print(message)
@@ -556,6 +574,7 @@ def setup_game() -> None:
 
 def show_welcome_screen() -> None:
     """Display the intro screen with instructions, then wait for a keypress."""
+    hide_cursor()  # Hide blinking cursor during gameplay
     clear_screen()
     print(f"=== {GAME_NAME} ===\n")
     print(f"{STORY_INTRO}!\n")
@@ -703,6 +722,7 @@ def main() -> None:
         if not play_again:
             break
 
+    show_cursor()  # Always restore cursor on exit
     clear_screen()
     print("Thanks for playing! See ya, mate!")
 
