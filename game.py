@@ -169,7 +169,7 @@ def draw_header(time_remaining: float) -> None:
     """Print the game title and current stats."""
     print(f"=== {GAME_NAME} ===")
     print(f"Score: {score}/{WIN_SCORE}  |  Lives: {lives}  |  Time left: {time_remaining:.1f}s")
-    print(f"{PLAYER_EMOJI} move | {BULLET_EMOJI} shoot (space) | Q quit\n")
+    print(f"{PLAYER_EMOJI} move | {BULLET_EMOJI} auto-shoot (space) | Q quit\n")
 
 
 def get_cell_content(row: int, col: int) -> str:
@@ -281,27 +281,54 @@ def move_player(direction: str) -> bool:
 
 def shoot() -> bool:
     """
-    Fire a bullet in the direction the player is facing.
-    The bullet travels in a straight line until it hits a wall,
-    a hazard, or the edge of the grid.
+    Auto-target the closest hazard and fire a bullet toward it.
+    The bullet travels horizontally or vertically (not diagonally).
+    The player does NOT choose the direction — the game picks automatically.
 
     Returns True if a hazard was destroyed, False otherwise.
     """
     global hazards
 
-    # Determine the direction vector based on where the player is facing
-    if player_direction == "up":
-        delta_row, delta_col = -1, 0
-    elif player_direction == "down":
-        delta_row, delta_col = 1, 0
-    elif player_direction == "left":
-        delta_row, delta_col = 0, -1
-    elif player_direction == "right":
-        delta_row, delta_col = 0, 1
-    else:
+    # No hazards on the grid — nothing to shoot
+    if not hazards:
         return False
 
-    # Travel in a straight line from the player's position
+    # --- Step 1: Find the closest hazard by Manhattan distance ---
+    best_hazard = None
+    best_distance = float("inf")
+
+    for h_row, h_col in hazards:
+        distance = abs(h_row - player_row) + abs(h_col - player_col)
+        if distance < best_distance:
+            best_distance = distance
+            best_hazard = (h_row, h_col)
+
+    if best_hazard is None:
+        return False
+
+    h_row, h_col = best_hazard
+    row_diff = h_row - player_row
+    col_diff = h_col - player_col
+
+    # Hazard is on the player's position — can't shoot (shouldn't happen)
+    if row_diff == 0 and col_diff == 0:
+        return False
+
+    # --- Step 2: Pick a direction (horizontal or vertical) ---
+    if row_diff == 0:
+        # Same row — shoot horizontally
+        delta_row, delta_col = 0, (1 if col_diff > 0 else -1)
+    elif col_diff == 0:
+        # Same column — shoot vertically
+        delta_row, delta_col = (1 if row_diff > 0 else -1), 0
+    elif abs(row_diff) <= abs(col_diff):
+        # Diagonal — prefer vertical (closer axis)
+        delta_row, delta_col = (1 if row_diff > 0 else -1), 0
+    else:
+        # Diagonal — prefer horizontal (closer axis)
+        delta_row, delta_col = 0, (1 if col_diff > 0 else -1)
+
+    # --- Step 3: Travel in a straight line until we hit something ---
     row = player_row + delta_row
     col = player_col + delta_col
 
@@ -534,7 +561,7 @@ def run_game() -> bool:
     print(f"=== {GAME_NAME} ===\n")
     print(f"{STORY_INTRO}!\n")
     print(f"Collect {COLLECTIBLE_EMOJI} to score. Avoid {HAZARD_EMOJI} traps!")
-    print(f"Shoot {HAZARD_EMOJI} with the {BULLET_EMOJI} SPACE bar!")
+    print(f"Press SPACE to auto-shoot the nearest {HAZARD_EMOJI} with {BULLET_EMOJI}!")
     print(f"{WALL_EMOJI} walls block your path — and the hazards'!")
     print(f"You have {TIME_LIMIT} seconds and {STARTING_LIVES} lives.")
     print("Arrow keys to move. Q to quit.\n")

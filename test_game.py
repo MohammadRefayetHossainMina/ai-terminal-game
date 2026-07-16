@@ -194,70 +194,106 @@ def test_player_start_not_on_wall():
 
 
 # =============================================================================
-# SHOOTING TESTS
+# SHOOTING TESTS (auto-target closest hazard)
 # =============================================================================
 
-def test_shoot_right_hits_hazard():
-    """Shooting right should destroy a hazard in that direction."""
+def test_shoot_targets_closest_hazard():
+    """Should destroy the closest hazard, not the farthest one."""
     game.player_row = 0
     game.player_col = 0
-    game.player_direction = "right"
-    game.hazards = [(0, 5), (3, 3)]
+    # Hazard at distance 3 vs distance 10
+    game.hazards = [(0, 3), (0, 10)]
     result = game.shoot()
     assert result is True
-    assert (0, 5) not in game.hazards
-    assert len(game.hazards) == 1
+    assert (0, 3) not in game.hazards  # Closest destroyed
+    assert (0, 10) in game.hazards      # Farthest survives
 
 
-def test_shoot_down_hits_hazard():
-    """Shooting down should destroy a hazard below."""
+def test_shoot_hits_hazard_on_same_row():
+    """Should shoot horizontally when the closest hazard is on the same row."""
+    # Use row 0 (no walls in row 0)
     game.player_row = 0
     game.player_col = 0
-    game.player_direction = "down"
-    game.hazards = [(5, 0)]
+    game.hazards = [(0, 8)]
     result = game.shoot()
     assert result is True
-    assert (5, 0) not in game.hazards
+    assert (0, 8) not in game.hazards
 
 
-def test_shoot_up_hits_hazard():
-    """Shooting up should destroy a hazard above."""
-    game.player_row = 12
-    game.player_col = 0
-    game.player_direction = "up"
-    game.hazards = [(5, 0)]
-    result = game.shoot()
-    assert result is True
-    assert (5, 0) not in game.hazards
-
-
-def test_shoot_left_hits_hazard():
-    """Shooting left should destroy a hazard to the left."""
+def test_shoot_hits_hazard_on_same_column():
+    """Should shoot vertically when the closest hazard is on the same column."""
     game.player_row = 0
-    game.player_col = 10
-    game.player_direction = "left"
-    game.hazards = [(0, 5)]
+    game.player_col = 5
+    game.hazards = [(8, 5)]
     result = game.shoot()
     assert result is True
-    assert (0, 5) not in game.hazards
+    assert (8, 5) not in game.hazards
 
 
-def test_shoot_misses():
-    """Shooting when no hazard is in the line should return False."""
+def test_shoot_diagonal_prefers_vertical():
+    """When closest hazard is diagonal and row distance <= col distance, shoot vertically.
+    The bullet travels vertically — it hits anything in that column, not the diagonal target."""
     game.player_row = 0
     game.player_col = 0
-    game.player_direction = "right"
-    game.hazards = [(12, 12)]
+    # Hazard at (3, 5): row_diff=3, col_diff=5 → prefer vertical
+    # Place a decoy hazard in the vertical path to prove the bullet goes down
+    game.hazards = [(3, 5), (4, 0)]
+    result = game.shoot()
+    assert result is True
+    assert (4, 0) not in game.hazards   # Hit the one in the vertical path
+    assert (3, 5) in game.hazards        # Diagonal target survives
+
+
+def test_shoot_diagonal_prefers_horizontal():
+    """When closest hazard is diagonal and col distance < row distance, shoot horizontally.
+    The bullet travels horizontally — it hits anything in that row, not the diagonal target."""
+    game.player_row = 0
+    game.player_col = 0
+    # Hazard at (5, 3): row_diff=5, col_diff=3 → prefer horizontal
+    # Place a decoy hazard in the horizontal path to prove the bullet goes right
+    game.hazards = [(5, 3), (0, 4)]
+    result = game.shoot()
+    assert result is True
+    assert (0, 4) not in game.hazards   # Hit the one in the horizontal path
+    assert (5, 3) in game.hazards        # Diagonal target survives
+
+
+def test_shoot_misses_when_no_hazards():
+    """Shooting with no hazards should return False."""
+    game.player_row = 0
+    game.player_col = 0
+    game.hazards = []
     result = game.shoot()
     assert result is False
-    assert len(game.hazards) == 1
+
+
+def test_shoot_stops_at_wall():
+    """Bullet should stop at a wall and not reach a hazard behind it."""
+    game.player_row = 2
+    game.player_col = 0
+    # Wall at (2,2), hazard at (2,5) — bullet blocked by wall
+    game.hazards = [(2, 5)]
+    result = game.shoot()
+    assert result is False
+    assert (2, 5) in game.hazards  # Hazard still alive
+
+
+def test_shoot_does_not_hit_player():
+    """Bullet should never hit the player's own position."""
+    game.player_row = 0
+    game.player_col = 0
+    game.hazards = [(0, 3), (0, 8)]
+    result = game.shoot()
+    assert result is True
+    # Only the first hazard in line should be hit
+    assert (0, 3) not in game.hazards
+    assert (0, 8) in game.hazards
 
 
 def test_shoot_stops_at_collectible():
     """Bullet should pass through the collectible and only hit hazards."""
     game.player_row = 0
     game.player_col = 0
-    game.player_direction = "right"
     game.collectible_row = 0
     game.collectible_col = 1
     game.hazards = [(0, 5)]
@@ -267,48 +303,51 @@ def test_shoot_stops_at_collectible():
     assert game.score == 0  # collectible not affected
 
 
-def test_shoot_does_not_hit_player():
-    """Bullet should not hit the player's own position."""
+def test_shoot_multiple_closest_picks_right_one():
+    """When two hazards are equidistant, the bullet should hit the one in its path."""
     game.player_row = 0
     game.player_col = 0
-    game.player_direction = "right"
-    game.hazards = [(0, 3), (0, 8)]
+    # Both at distance 5, but (0,5) is on the same row (horizontal path)
+    # and (5,0) is on the same column (vertical path)
+    # Manhattan distance: both = 5. Closest is whichever is found first.
+    # (0,5): row_diff=0, col_diff=5 → same row → shoot horizontal
+    game.hazards = [(0, 5), (5, 0)]
     result = game.shoot()
     assert result is True
-    # Only the first hazard in line should be hit
-    assert (0, 3) not in game.hazards
-    assert (0, 8) in game.hazards
+    # One of them should be destroyed
+    remaining = len(game.hazards)
+    assert remaining == 1
 
 
-def test_shoot_stops_at_wall():
-    """Bullet should stop at a wall and not pass through it."""
-    game.player_row = 1
-    game.player_col = 0
-    game.player_direction = "right"
-    # Wall at (2,2) — bullet from (1,0) going right won't hit it since it's a different row.
-    # Let's use a clear line: (1,0) shooting right — wall at (1,??)... row 1 is all clear.
-    # Use row 2: player at (2,0) shooting right — wall at (2,2)
-    game.player_row = 2
-    game.player_col = 0
-    game.hazards = [(2, 5)]  # Hazard behind the wall
-    result = game.shoot()
-    assert result is False  # Bullet stopped at wall (2,2), never reached (2,5)
-    assert (2, 5) in game.hazards  # Hazard still alive
-
-
-def test_shoot_blocked_by_wall_no_harm():
-    """A wall between the player and a hazard should block the bullet."""
+def test_shoot_left_when_hazard_to_the_left():
+    """Should shoot left when the closest hazard is to the left."""
+    # Use row 0 (no walls)
     game.player_row = 0
     game.player_col = 10
-    game.player_direction = "left"
-    # Row 0 is all clear, but let's use row 2 which has walls
-    game.player_row = 2
-    game.player_col = 14
-    game.hazards = [(2, 1)]  # Hazard on the other side of walls at (2,11)-(2,13)
+    game.hazards = [(0, 3)]
     result = game.shoot()
-    # Bullet goes left from (2,14): hits wall at (2,13) — stops
-    assert result is False
-    assert (2, 1) in game.hazards
+    assert result is True
+    assert (0, 3) not in game.hazards
+
+
+def test_shoot_up_when_hazard_above():
+    """Should shoot up when the closest hazard is above."""
+    game.player_row = 10
+    game.player_col = 5
+    game.hazards = [(3, 5)]
+    result = game.shoot()
+    assert result is True
+    assert (3, 5) not in game.hazards
+
+
+def test_shoot_down_when_hazard_below():
+    """Should shoot down when the closest hazard is below."""
+    game.player_row = 3
+    game.player_col = 5
+    game.hazards = [(10, 5)]
+    result = game.shoot()
+    assert result is True
+    assert (10, 5) not in game.hazards
 
 
 # =============================================================================
