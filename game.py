@@ -10,12 +10,13 @@ import termios
 # GAME CONFIGURATION
 # =============================================================================
 
-GRID_SIZE = 5          # The grid is 5x5 cells
+GRID_SIZE = 16         # The grid is 16x16 cells
 WIN_SCORE = 10         # Collect 10 items to win
-TIME_LIMIT = 60        # 60 seconds to complete the game
+TIME_LIMIT = 120       # 120 seconds to complete the game
 STARTING_LIVES = 2     # Player begins with 2 lives
-MIN_HAZARDS = 2        # Minimum number of hazards on the grid
-MAX_HAZARDS = 4        # Maximum number of hazards on the grid
+MIN_HAZARDS = 3        # Minimum number of hazards on the grid
+MAX_HAZARDS = 5        # Maximum number of hazards on the grid
+HAZARD_MOVE_EVERY_N_TICKS = 3  # Hazards move once every 3 ticks (~0.9s)
 
 # =============================================================================
 # CUSTOM THEME
@@ -26,9 +27,43 @@ STORY_INTRO = "Find and collect treasures and avoid traps"
 PLAYER_EMOJI = "\U0001F3A9"       # 🎩
 COLLECTIBLE_EMOJI = "\U0001F4E6"  # 📦
 HAZARD_EMOJI = "\U0001F30B"       # 🌋
-BULLET_EMOJI = "\U0001F4A5"       # 💥
+BULLET_EMOJI = "\U0001F534"       # 🔴
+WALL_EMOJI = "\U0001F9F1"         # 🧱
 WIN_MESSAGE = "You won"
 LOSE_MESSAGE = "Try again"
+
+# =============================================================================
+# WALL LAYOUT
+# =============================================================================
+# Each character = one cell.  # = wall, . = empty.
+# The walls create rooms and corridors that slow hazards down.
+# Player starts at (0,0) which is always clear.
+
+WALL_MAP = [
+    "................",  # row 0
+    "................",  # row 1
+    "..###.....###...",  # row 2
+    "..#.#.....#.#...",  # row 3
+    "....#.....#.....",  # row 4
+    "..###.....###...",  # row 5
+    "......#####.....",  # row 6
+    "......#...#.....",  # row 7
+    "......#...#.....",  # row 8
+    "......#####.....",  # row 9
+    "..#.#.....#.#...",  # row 10
+    "..###.....###...",  # row 11
+    "................",  # row 12
+    "................",  # row 13
+    "................",  # row 14
+    "................",  # row 15
+]
+
+# Parse the map into a set of (row, col) tuples for fast lookups
+WALLS: set[tuple[int, int]] = set()
+for _row_idx, _row_str in enumerate(WALL_MAP):
+    for _col_idx, _char in enumerate(_row_str):
+        if _char == "#":
+            WALLS.add((_row_idx, _col_idx))
 
 # =============================================================================
 # GAME STATE
@@ -48,6 +83,9 @@ hazards: list[tuple[int, int]] = []
 # Direction the player is facing (used for shooting).
 # Starts as "right" — updated every time the player moves.
 player_direction = "right"
+
+# Tick counter for slowing down hazard movement
+hazard_tick_counter = 0
 
 
 # =============================================================================
@@ -131,13 +169,13 @@ def draw_header(time_remaining: float) -> None:
     """Print the game title and current stats."""
     print(f"=== {GAME_NAME} ===")
     print(f"Score: {score}/{WIN_SCORE}  |  Lives: {lives}  |  Time left: {time_remaining:.1f}s")
-    print("Arrows: move | Space: shoot | Q: quit\n")
+    print(f"{PLAYER_EMOJI} move | {BULLET_EMOJI} shoot (space) | Q quit\n")
 
 
 def get_cell_content(row: int, col: int) -> str:
     """
     Decide what to display in a single grid cell.
-    Priority: Player > Collectible > Hazard > Bullet > Empty
+    Priority: Player > Collectible > Hazard > Wall > Empty
     """
     if row == player_row and col == player_col:
         return f" {PLAYER_EMOJI} "
@@ -145,6 +183,8 @@ def get_cell_content(row: int, col: int) -> str:
         return f" {COLLECTIBLE_EMOJI} "
     elif (row, col) in hazards:
         return f" {HAZARD_EMOJI} "
+    elif (row, col) in WALLS:
+        return f" {WALL_EMOJI} "
     else:
         return " . "
 
@@ -169,7 +209,7 @@ def draw_grid(time_remaining: float) -> None:
 def reset_game() -> None:
     """Reset all game state to default values for a fresh game."""
     global player_row, player_col, score, lives, player_direction
-    global collectible_row, collectible_col, hazards
+    global collectible_row, collectible_col, hazards, hazard_tick_counter
 
     player_row = 0
     player_col = 0
@@ -179,6 +219,7 @@ def reset_game() -> None:
     collectible_row = 0
     collectible_col = 0
     hazards = []
+    hazard_tick_counter = 0
 
 
 # =============================================================================
@@ -205,7 +246,7 @@ DIRECTION_LABELS = {
 def move_player(direction: str) -> bool:
     """
     Move the player in the given direction (UP/DOWN/LEFT/RIGHT arrow keys).
-    Returns True if the player actually moved, False if blocked by boundary.
+    Returns True if the player actually moved, False if blocked by boundary or wall.
     Updates player_direction so we know which way the player is facing.
     """
     global player_row, player_col, player_direction
@@ -223,6 +264,10 @@ def move_player(direction: str) -> bool:
     if new_col < 0 or new_col >= GRID_SIZE:
         return False
 
+    # Wall check — can't walk through walls
+    if (new_row, new_col) in WALLS:
+        return False
+
     player_row = new_row
     player_col = new_col
     # Remember which way the player is facing (for shooting)
@@ -237,8 +282,8 @@ def move_player(direction: str) -> bool:
 def shoot() -> bool:
     """
     Fire a bullet in the direction the player is facing.
-    The bullet travels in a straight line until it hits a hazard or
-    the edge of the grid.
+    The bullet travels in a straight line until it hits a wall,
+    a hazard, or the edge of the grid.
 
     Returns True if a hazard was destroyed, False otherwise.
     """
@@ -261,6 +306,9 @@ def shoot() -> bool:
     col = player_col + delta_col
 
     while 0 <= row < GRID_SIZE and 0 <= col < GRID_SIZE:
+        # Bullet stops at walls
+        if (row, col) in WALLS:
+            return False
         # Check if there's a hazard at this position
         if (row, col) in hazards:
             hazards.remove((row, col))
@@ -274,14 +322,16 @@ def shoot() -> bool:
 
 
 # =============================================================================
-# HAZARD AI — hazards chase the player
+# HAZARD AI — hazards chase the player, respecting walls
 # =============================================================================
 
 def move_hazards_toward_player() -> None:
     """
     Move each hazard one step closer to the player.
-    Uses simple greedy pathfinding: move in the axis with the largest distance.
-    If the hazard is already adjacent to the player, it stays put.
+    Uses greedy pathfinding with wall avoidance:
+    - Try to move along the axis with the largest distance.
+    - If that direction is blocked by a wall, try the other axis.
+    - If both are blocked, stay put.
     """
     global hazards
 
@@ -297,27 +347,42 @@ def move_hazards_toward_player() -> None:
         row_diff = player_row - hazard_row
         col_diff = player_col - hazard_col
 
-        # Greedy: move along the axis with the larger distance
+        # Build a list of candidate moves, preferred axis first
         if abs(row_diff) >= abs(col_diff):
-            # Move vertically toward the player
-            new_row = hazard_row + (1 if row_diff > 0 else -1)
-            new_col = hazard_col
+            # Prefer vertical, fall back to horizontal
+            candidates = [
+                (hazard_row + (1 if row_diff > 0 else -1), hazard_col),
+                (hazard_row, hazard_col + (1 if col_diff > 0 else -1)),
+            ]
         else:
-            # Move horizontally toward the player
-            new_row = hazard_row
-            new_col = hazard_col + (1 if col_diff > 0 else -1)
+            # Prefer horizontal, fall back to vertical
+            candidates = [
+                (hazard_row, hazard_col + (1 if col_diff > 0 else -1)),
+                (hazard_row + (1 if row_diff > 0 else -1), hazard_col),
+            ]
 
-        # Don't move onto the player (collision handled separately)
-        if (new_row, new_col) == (player_row, player_col):
+        moved = False
+        for new_row, new_col in candidates:
+            # Skip if out of bounds
+            if not (0 <= new_row < GRID_SIZE and 0 <= new_col < GRID_SIZE):
+                continue
+            # Skip if blocked by a wall
+            if (new_row, new_col) in WALLS:
+                continue
+            # Don't move onto the player (collision handled separately)
+            if (new_row, new_col) == (player_row, player_col):
+                continue
+            # Don't move onto another hazard
+            if (new_row, new_col) in new_hazards:
+                continue
+            # Valid move!
+            new_hazards.append((new_row, new_col))
+            moved = True
+            break
+
+        # If both directions were blocked, stay put
+        if not moved:
             new_hazards.append((hazard_row, hazard_col))
-            continue
-
-        # Don't move onto another hazard
-        if (new_row, new_col) in new_hazards:
-            new_hazards.append((hazard_row, hazard_col))
-            continue
-
-        new_hazards.append((new_row, new_col))
 
     hazards = new_hazards
 
@@ -327,7 +392,9 @@ def move_hazards_toward_player() -> None:
 # =============================================================================
 
 def is_position_occupied(row: int, col: int) -> bool:
-    """Check if a position is taken by the player, collectible, or any hazard."""
+    """Check if a position is taken by the player, collectible, a hazard, or a wall."""
+    if (row, col) in WALLS:
+        return True
     if row == player_row and col == player_col:
         return True
     if row == collectible_row and col == collectible_col:
@@ -338,7 +405,7 @@ def is_position_occupied(row: int, col: int) -> bool:
 
 
 def spawn_collectible() -> None:
-    """Place the collectible at a random empty position on the grid."""
+    """Place the collectible at a random empty position on the grid (not on a wall)."""
     global collectible_row, collectible_col
 
     while True:
@@ -348,11 +415,13 @@ def spawn_collectible() -> None:
             continue
         if (collectible_row, collectible_col) in hazards:
             continue
+        if (collectible_row, collectible_col) in WALLS:
+            continue
         break
 
 
 def _spawn_one_hazard() -> tuple[int, int]:
-    """Pick a single random position that isn't occupied."""
+    """Pick a single random position that isn't occupied (including walls)."""
     while True:
         row = random.randint(0, GRID_SIZE - 1)
         col = random.randint(0, GRID_SIZE - 1)
@@ -454,6 +523,8 @@ def run_game() -> bool:
     Returns:
         True if the player wants to play again, False to quit.
     """
+    global hazard_tick_counter
+
     reset_game()
     spawn_collectible()
     spawn_hazards()
@@ -463,7 +534,8 @@ def run_game() -> bool:
     print(f"=== {GAME_NAME} ===\n")
     print(f"{STORY_INTRO}!\n")
     print(f"Collect {COLLECTIBLE_EMOJI} to score. Avoid {HAZARD_EMOJI} traps!")
-    print(f"Shoot {HAZARD_EMOJI} with the SPACE bar!")
+    print(f"Shoot {HAZARD_EMOJI} with the {BULLET_EMOJI} SPACE bar!")
+    print(f"{WALL_EMOJI} walls block your path — and the hazards'!")
     print(f"You have {TIME_LIMIT} seconds and {STARTING_LIVES} lives.")
     print("Arrow keys to move. Q to quit.\n")
     print("Press any key to start...")
@@ -487,18 +559,23 @@ def run_game() -> bool:
         # --- Wait for input (hazards chase while you think!) ---
         key = get_keypress_with_timeout(0.3)
 
-        # --- No key pressed — hazards move toward the player ---
+        # --- Tick the hazard counter ---
+        hazard_tick_counter += 1
+
+        # --- No key pressed — hazards move on their own schedule ---
         if key is None:
-            move_hazards_toward_player()
-            # Check if hazards reached the player after moving
-            if check_hazard():
-                if has_lost():
-                    show_end_screen(
-                        f"{LOSE_MESSAGE}! You collected {score}/{WIN_SCORE} treasures "
-                        "but the traps got you."
-                    )
-                    return play_again_prompt()
-            continue  # Redraw grid with new hazard positions
+            # Only move hazards every N ticks (slower movement)
+            if hazard_tick_counter % HAZARD_MOVE_EVERY_N_TICKS == 0:
+                move_hazards_toward_player()
+                # Check if hazards reached the player after moving
+                if check_hazard():
+                    if has_lost():
+                        show_end_screen(
+                            f"{LOSE_MESSAGE}! You collected {score}/{WIN_SCORE} treasures "
+                            "but the traps got you."
+                        )
+                        return play_again_prompt()
+            continue  # Redraw grid
 
         # --- Handle quit ---
         if key == "q":
