@@ -749,6 +749,60 @@ def test_hazard_respawn_delay_config():
 
 
 # =============================================================================
+# HAZARD TYPE TESTS (snake and tiger)
+# =============================================================================
+
+def test_spawn_hazards_assigns_types():
+    """Each spawned hazard should have a type (snake or tiger)."""
+    game.spawn_hazards()
+    for pos in game.hazards:
+        assert pos in game.hazard_types
+        assert game.hazard_types[pos] in game.HAZARD_TYPES
+
+
+def test_hazard_types_count_matches_hazards():
+    """hazard_types dict should have one entry per hazard."""
+    game.spawn_hazards()
+    assert len(game.hazard_types) == len(game.hazards)
+
+
+def test_destroy_hazard_removes_type():
+    """destroy_hazard() should also remove the hazard's type entry."""
+    game.hazards = [(5, 5), (8, 8)]
+    game.hazard_types = {(5, 5): game.SNAKE_EMOJI, (8, 8): game.TIGER_EMOJI}
+    game.destroy_hazard((5, 5))
+    assert (5, 5) not in game.hazard_types
+    assert (8, 8) in game.hazard_types
+
+
+def test_respawn_assigns_type():
+    """Respawned hazards should be assigned a random type."""
+    game.hazards = [(5, 5)]
+    game.hazard_types = {(5, 5): game.SNAKE_EMOJI}
+    game.destroy_hazard((5, 5))
+    game.pending_respawns = [time.time() - 1]
+    game.respawn_pending_hazards()
+    assert len(game.hazards) == 1
+    new_pos = game.hazards[0]
+    assert new_pos in game.hazard_types
+    assert game.hazard_types[new_pos] in game.HAZARD_TYPES
+
+
+def test_reset_clears_hazard_types():
+    """reset_game() should clear the hazard_types dict."""
+    game.hazard_types = {(5, 5): game.SNAKE_EMOJI, (8, 8): game.TIGER_EMOJI}
+    game.reset_game()
+    assert game.hazard_types == {}
+
+
+def test_hazard_types_pool_has_two_emojis():
+    """HAZARD_TYPES should contain exactly snake and tiger emojis."""
+    assert len(game.HAZARD_TYPES) == 2
+    assert game.SNAKE_EMOJI in game.HAZARD_TYPES
+    assert game.TIGER_EMOJI in game.HAZARD_TYPES
+
+
+# =============================================================================
 # WIN / LOSE CONDITION TESTS
 # =============================================================================
 
@@ -837,14 +891,15 @@ def test_get_cell_content_collectible():
 
 
 def test_get_cell_content_hazard():
-    """Shows the hazard emoji where any hazard is."""
+    """Shows the correct hazard emoji (snake or tiger) where any hazard is."""
     game.player_row = 0
     game.player_col = 0
     game.collectible_row = 10
     game.collectible_col = 10
     game.hazards = [(12, 12), (14, 5)]
-    assert game.get_cell_content(12, 12) == f" {game.HAZARD_EMOJI} "
-    assert game.get_cell_content(14, 5) == f" {game.HAZARD_EMOJI} "
+    game.hazard_types = {(12, 12): game.SNAKE_EMOJI, (14, 5): game.TIGER_EMOJI}
+    assert game.get_cell_content(12, 12) == f" {game.SNAKE_EMOJI} "
+    assert game.get_cell_content(14, 5) == f" {game.TIGER_EMOJI} "
 
 
 def test_get_cell_content_wall():
@@ -902,9 +957,12 @@ def test_collectible_emoji():
     assert game.COLLECTIBLE_EMOJI == "\U0001F4E6"
 
 
-def test_hazard_emoji():
-    """Hazard emoji should be the volcano."""
-    assert game.HAZARD_EMOJI == "\U0001F30B"
+def test_hazard_emojis():
+    """Hazard emojis should be snake and tiger."""
+    assert game.SNAKE_EMOJI == "\U0001F40D"
+    assert game.TIGER_EMOJI == "\U0001F42F"
+    assert game.SNAKE_EMOJI in game.HAZARD_TYPES
+    assert game.TIGER_EMOJI in game.HAZARD_TYPES
 
 
 def test_bullet_emoji():
@@ -934,10 +992,11 @@ def test_cell_content_uses_correct_emojis():
     game.collectible_row = 10
     game.collectible_col = 10
     game.hazards = [(12, 12)]
+    game.hazard_types = {(12, 12): game.SNAKE_EMOJI}
 
     assert game.PLAYER_EMOJI in game.get_cell_content(0, 0)
     assert game.COLLECTIBLE_EMOJI in game.get_cell_content(10, 10)
-    assert game.HAZARD_EMOJI in game.get_cell_content(12, 12)
+    assert game.SNAKE_EMOJI in game.get_cell_content(12, 12)
     assert game.WALL_EMOJI in game.get_cell_content(2, 2)
     assert game.get_cell_content(14, 14) == " . "
 

@@ -27,7 +27,9 @@ GAME_NAME = "Australian Jones"
 STORY_INTRO = "Find and collect treasures and avoid traps"
 PLAYER_EMOJI = "\U0001F3CD"       # 🏍️
 COLLECTIBLE_EMOJI = "\U0001F4E6"  # 📦
-HAZARD_EMOJI = "\U0001F30B"       # 🌋
+SNAKE_EMOJI = "\U0001F40D"        # 🐍
+TIGER_EMOJI = "\U0001F42F"        # 🐯
+HAZARD_TYPES = [SNAKE_EMOJI, TIGER_EMOJI]  # Pool of hazard emojis to randomly pick from
 BULLET_EMOJI = "\U0001F534"       # 🔴
 WALL_EMOJI = "\U0001F9F1"         # 🧱
 WIN_MESSAGE = "You won"
@@ -80,6 +82,9 @@ collectible_col = 0    # Column of the collectible item
 
 # Hazards are stored as a list of (row, col) tuples.
 hazards: list[tuple[int, int]] = []
+
+# Maps each hazard position to its emoji type ("🐍" or "🐯")
+hazard_types: dict[tuple[int, int], str] = {}
 
 # Direction the player is facing (used for shooting).
 # Starts as "right" — updated every time the player moves.
@@ -196,7 +201,7 @@ def get_cell_content(row: int, col: int) -> str:
     elif row == collectible_row and col == collectible_col:
         return f" {COLLECTIBLE_EMOJI} "
     elif (row, col) in hazards:
-        return f" {HAZARD_EMOJI} "
+        return f" {hazard_types.get((row, col), SNAKE_EMOJI)} "
     elif (row, col) in WALLS:
         return f" {WALL_EMOJI} "
     else:
@@ -235,8 +240,8 @@ def draw_grid(time_remaining: float) -> None:
 def reset_game() -> None:
     """Reset all game state to default values for a fresh game."""
     global player_row, player_col, score, lives, player_direction
-    global collectible_row, collectible_col, hazards, hazard_tick_counter
-    global pending_respawns
+    global collectible_row, collectible_col, hazards, hazard_types
+    global hazard_tick_counter, pending_respawns
 
     player_row = 0
     player_col = 0
@@ -246,6 +251,7 @@ def reset_game() -> None:
     collectible_row = 0
     collectible_col = 0
     hazards = []
+    hazard_types = {}
     hazard_tick_counter = 0
     pending_respawns = []
 
@@ -486,14 +492,16 @@ def _spawn_one_hazard() -> tuple[int, int]:
 
 def spawn_hazards() -> None:
     """Place between MIN_HAZARDS and MAX_HAZARDS hazards on the grid."""
-    global hazards
+    global hazards, hazard_types
 
     hazards = []
+    hazard_types = {}
     num_hazards = random.randint(MIN_HAZARDS, MAX_HAZARDS)
 
     for _ in range(num_hazards):
         pos = _spawn_one_hazard()
         hazards.append(pos)
+        hazard_types[pos] = random.choice(HAZARD_TYPES)
 
 
 # =============================================================================
@@ -505,10 +513,11 @@ def destroy_hazard(position: tuple[int, int]) -> None:
     Remove a hazard from the grid and schedule it to respawn
     after HAZARD_RESPAWN_DELAY seconds.
     """
-    global hazards, pending_respawns
+    global hazards, hazard_types, pending_respawns
 
     if position in hazards:
         hazards.remove(position)
+        hazard_types.pop(position, None)
         pending_respawns.append(time.time() + HAZARD_RESPAWN_DELAY)
 
 
@@ -525,6 +534,7 @@ def respawn_pending_hazards() -> None:
     for _ in ready:
         pos = _spawn_one_hazard()
         hazards.append(pos)
+        hazard_types[pos] = random.choice(HAZARD_TYPES)
 
 
 def check_collectible() -> bool:
@@ -620,8 +630,8 @@ def show_welcome_screen() -> None:
         "",
         f"{STORY_INTRO}!",
         "",
-        f"Collect {COLLECTIBLE_EMOJI} to score. Avoid {HAZARD_EMOJI} traps!",
-        f"Press SPACE to auto-shoot the nearest {HAZARD_EMOJI} with {BULLET_EMOJI}!",
+        f"Collect {COLLECTIBLE_EMOJI} to score. Avoid {SNAKE_EMOJI} and {TIGER_EMOJI} traps!",
+        f"Press SPACE to auto-shoot the nearest trap with {BULLET_EMOJI}!",
         f"{WALL_EMOJI} walls block your path — and the hazards'!",
         f"You have {TIME_LIMIT} seconds and {STARTING_LIVES} lives.",
         "Arrow keys to move. Q to quit.",
