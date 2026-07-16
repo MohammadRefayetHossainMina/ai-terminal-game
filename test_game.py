@@ -506,6 +506,20 @@ def test_reset_tick_counter():
     assert game.hazard_tick_counter == 0
 
 
+def test_reset_pending_respawns():
+    """reset_game() clears the pending respawns list."""
+    game.pending_respawns = [1.0, 2.0, 3.0]
+    game.reset_game()
+    assert game.pending_respawns == []
+
+
+def test_reset_first_frame():
+    """reset_game() resets _first_frame to True."""
+    game._first_frame = False
+    game.reset_game()
+    assert game._first_frame is True
+
+
 # =============================================================================
 # SPAWNING TESTS — collectible
 # =============================================================================
@@ -625,14 +639,15 @@ def test_hit_hazard_reduces_lives():
 
 
 def test_hazard_respawns_after_hit():
-    """After hitting a hazard, it should be removed and a new one spawned."""
+    """After hitting a hazard, it is removed and a respawn is scheduled (not immediate)."""
     game.player_row = 0
     game.player_col = 0
     game.hazards = [(0, 1)]
     game.move_player("RIGHT")
     game.check_hazard()
-    assert (0, 1) not in game.hazards
-    assert len(game.hazards) == 1
+    assert (0, 1) not in game.hazards  # Removed from grid immediately
+    assert len(game.hazards) == 0       # NOT respawned yet
+    assert len(game.pending_respawns) == 1  # Respawn scheduled
 
 
 def test_hazard_miss_does_not_reduce_lives():
@@ -649,6 +664,95 @@ def test_hazard_miss_does_not_reduce_lives():
 def test_lives_starts_at_two():
     """Lives should start at STARTING_LIVES (2)."""
     assert game.lives == game.STARTING_LIVES
+
+
+# =============================================================================
+# HAZARD RESPAWN DELAY TESTS
+# =============================================================================
+
+def test_destroy_hazard_removes_from_grid():
+    """destroy_hazard() immediately removes the hazard from the grid."""
+    game.hazards = [(5, 5), (8, 8)]
+    game.destroy_hazard((5, 5))
+    assert (5, 5) not in game.hazards
+    assert (8, 8) in game.hazards
+
+
+def test_destroy_hazard_schedules_respawn():
+    """destroy_hazard() schedules a respawn after HAZARD_RESPAWN_DELAY seconds."""
+    game.hazards = [(5, 5)]
+    before = time.time()
+    game.destroy_hazard((5, 5))
+    assert len(game.pending_respawns) == 1
+    assert game.pending_respawns[0] >= before + game.HAZARD_RESPAWN_DELAY
+
+
+def test_destroy_hazard_ignores_unknown_position():
+    """destroy_hazard() does nothing if the position isn't a hazard."""
+    game.hazards = [(5, 5)]
+    game.destroy_hazard((9, 9))
+    assert len(game.hazards) == 1
+    assert len(game.pending_respawns) == 0
+
+
+def test_respawn_pending_hazards_after_delay():
+    """respawn_pending_hazards() spawns hazards whose delay has elapsed."""
+    game.hazards = [(5, 5)]
+    game.destroy_hazard((5, 5))
+    assert len(game.hazards) == 0
+    # Fake the timestamp to make the respawn "due"
+    game.pending_respawns = [time.time() - 1]  # 1 second ago
+    game.respawn_pending_hazards()
+    assert len(game.hazards) == 1
+    assert len(game.pending_respawns) == 0
+
+
+def test_respawn_pending_hazards_not_too_early():
+    """respawn_pending_hazards() does NOT spawn if the delay hasn't passed."""
+    game.hazards = [(5, 5)]
+    game.destroy_hazard((5, 5))
+    # Set respawn time far in the future
+    game.pending_respawns = [time.time() + 999]
+    game.respawn_pending_hazards()
+    assert len(game.hazards) == 0  # Still gone
+    assert len(game.pending_respawns) == 1  # Still waiting
+
+
+def test_respawn_pending_hazards_avoids_walls():
+    """Respawned hazards should never appear on a wall."""
+    game.hazards = [(5, 5)]
+    game.destroy_hazard((5, 5))
+    # Run many times to be sure
+    for _ in range(50):
+        game.pending_respawns = [time.time() - 1]
+        game.respawn_pending_hazards()
+        for pos in game.hazards:
+            assert pos not in game.WALLS
+        game.hazards = []  # Clear for next iteration
+
+
+def test_shoot_schedules_respawn():
+    """Shooting a hazard should schedule a respawn, not spawn immediately."""
+    game.player_row = 0
+    game.player_col = 0
+    game.hazards = [(0, 5)]
+    game.shoot()
+    assert (0, 5) not in game.hazards
+    assert len(game.hazards) == 0
+    assert len(game.pending_respawns) == 1
+
+
+def test_reset_clears_pending_respawns():
+    """reset_game() should clear all pending respawns."""
+    game.pending_respawns = [time.time() + 10, time.time() + 20]
+    game.reset_game()
+    assert game.pending_respawns == []
+
+
+def test_hazard_respawn_delay_config():
+    """HAZARD_RESPAWN_DELAY should be a positive number of seconds."""
+    assert game.HAZARD_RESPAWN_DELAY > 0
+    assert isinstance(game.HAZARD_RESPAWN_DELAY, float)
 
 
 # =============================================================================

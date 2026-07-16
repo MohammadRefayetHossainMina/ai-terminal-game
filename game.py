@@ -17,6 +17,7 @@ STARTING_LIVES = 2     # Player begins with 2 lives
 MIN_HAZARDS = 3        # Minimum number of hazards on the grid
 MAX_HAZARDS = 5        # Maximum number of hazards on the grid
 HAZARD_MOVE_EVERY_N_TICKS = 3  # Hazards move once every 3 ticks (~0.9s)
+HAZARD_RESPAWN_DELAY = 2.0     # Seconds before a destroyed hazard respawns
 
 # =============================================================================
 # CUSTOM THEME
@@ -86,6 +87,12 @@ player_direction = "right"
 
 # Tick counter for slowing down hazard movement
 hazard_tick_counter = 0
+
+# Timestamps when destroyed hazards should respawn (2-second delay)
+pending_respawns: list[float] = []
+
+# Track whether we've drawn the first frame (for zero-flicker rendering)
+_first_frame = True
 
 
 # =============================================================================
@@ -201,27 +208,37 @@ def get_cell_content(row: int, col: int) -> str:
 
 def draw_grid(time_remaining: float) -> None:
     """
-    Draw the full game frame in one single write to avoid flicker.
-    We build the entire frame as a list of lines, join them,
-    then write everything to the terminal at once.
+    Draw the full game frame with ZERO flicker.
+    Strategy:
+      - First frame:  clear the whole screen once, then write.
+      - Every frame:  move cursor to top-left and overwrite in place.
+    The entire frame is built as ONE string and written in ONE call,
+    so the terminal never shows a blank or half-drawn screen.
     """
-    lines = []
+    global _first_frame
 
-    # --- Header ---
+    # --- Build the frame as a list of lines ---
+    lines = []
     lines.append(f"=== {GAME_NAME} ===")
     lines.append(f"Score: {score}/{WIN_SCORE}  |  Lives: {lives}  |  Time left: {time_remaining:.1f}s")
-    lines.append(f"{PLAYER_EMOJI} move | {BULLET_EMOJI} auto-shoot (space) | Q quit\n")
+    lines.append(f"{PLAYER_EMOJI} move | {BULLET_EMOJI} auto-shoot (space) | Q quit")
+    lines.append("")  # blank line for spacing
 
-    # --- Grid rows ---
     for row in range(GRID_SIZE):
         line = "".join(get_cell_content(row, col) for col in range(GRID_SIZE))
         lines.append(line)
 
-    # --- Write the entire frame in ONE shot ---
-    # \033[H  = cursor to top-left (overwrite, don't clear)
-    # \033[J  = clear any leftover chars below (handles frame size changes)
     frame = "\n".join(lines)
-    sys.stdout.write(f"\033[H{frame}\033[J")
+
+    # --- Write the frame in ONE atomic operation ---
+    if _first_frame:
+        # First frame: clear screen completely, then write
+        sys.stdout.write(f"\033[2J\033[H{frame}")
+        _first_frame = False
+    else:
+        # All other frames: just jump to top-left and overwrite
+        sys.stdout.write(f"\033[H{frame}")
+
     sys.stdout.flush()
 
 
@@ -233,6 +250,7 @@ def reset_game() -> None:
     """Reset all game state to default values for a fresh game."""
     global player_row, player_col, score, lives, player_direction
     global collectible_row, collectible_col, hazards, hazard_tick_counter
+    global pending_respawns, _first_frame
 
     player_row = 0
     player_col = 0
@@ -243,6 +261,8 @@ def reset_game() -> None:
     collectible_col = 0
     hazards = []
     hazard_tick_counter = 0
+    pending_respawns = []
+    _first_frame = True
 
 
 # =============================================================================
@@ -361,7 +381,7 @@ def shoot() -> bool:
             return False
         # Check if there's a hazard at this position
         if (row, col) in hazards:
-            hazards.remove((row, col))
+            destroy_hazard((row, col))
             return True
         # Move further along the line
         row += delta_row
@@ -495,6 +515,33 @@ def spawn_hazards() -> None:
 # COLLISION CHECKS
 # =============================================================================
 
+def destroy_hazard(position: tuple[int, int]) -> None:
+    """
+    Remove a hazard from the grid and schedule it to respawn
+    after HAZARD_RESPAWN_DELAY seconds.
+    """
+    global hazards, pending_respawns
+
+    if position in hazards:
+        hazards.remove(position)
+        pending_respawns.append(time.time() + HAZARD_RESPAWN_DELAY)
+
+
+def respawn_pending_hazards() -> None:
+    """Check if any destroyed hazards are due to respawn, and spawn them."""
+    global pending_respawns
+
+    now = time.time()
+    # Find which respawns are ready
+    ready = [t for t in pending_respawns if t <= now]
+    # Keep only the ones still waiting
+    pending_respawns = [t for t in pending_respawns if t > now]
+
+    for _ in ready:
+        pos = _spawn_one_hazard()
+        hazards.append(pos)
+
+
 def check_collectible() -> bool:
     """Check if the player stepped on the collectible."""
     global score
@@ -507,15 +554,12 @@ def check_collectible() -> bool:
 
 def check_hazard() -> bool:
     """Check if the player stepped on any hazard."""
-    global lives, hazards
+    global lives
 
     player_pos = (player_row, player_col)
     if player_pos in hazards:
         lives -= 1
-        hazards.remove(player_pos)
-        # Respawn the destroyed hazard far from the player
-        new_pos = _spawn_one_hazard()
-        hazards.append(new_pos)
+        destroy_hazard(player_pos)
         return True
     return False
 
@@ -693,6 +737,9 @@ def run_game() -> bool:
         if time_remaining <= 0:
             msg = f"Time's up! You collected {score}/{WIN_SCORE} treasures.\n{LOSE_MESSAGE}!"
             return end_game(msg)
+
+        # 1b. Respawn any destroyed hazards that are due
+        respawn_pending_hazards()
 
         # 2. Draw the grid
         draw_grid(time_remaining)
